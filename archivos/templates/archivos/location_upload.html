@@ -1,0 +1,53 @@
+{% extends "archivos/base.html" %}
+
+{% block title %}Cargar mapa de ubicaciones | Inventario 2026{% endblock %}
+
+{% block content %}
+  <a class="back-link" href="{% url 'archivos:location_index' %}">← Volver al mapa de ubicaciones</a>
+  <div class="upload-layout">
+    <section class="upload-card">
+      <div class="upload-heading">
+        <span class="upload-icon location-upload-icon" aria-hidden="true">
+          <svg viewBox="0 0 24 24"><path d="M20 10c0 5-8 11-8 11S4 15 4 10a8 8 0 1 1 16 0Z" /><circle cx="12" cy="10" r="2.5" /></svg>
+        </span>
+        <div><p class="eyebrow">Importación</p><h1>Sustituir mapa de ubicaciones</h1></div>
+      </div>
+      <p class="intro">El archivo nuevo reemplazará completamente el mapa vigente después de superar todas las validaciones.</p>
+
+      <form method="post" enctype="multipart/form-data" novalidate>
+        {% csrf_token %}
+        <label class="file-drop {% if form.archivo.errors %}file-drop--error{% endif %}" for="{{ form.archivo.id_for_label }}">
+          <span class="excel-mark">XLSX</span>
+          <strong>Selecciona el mapa de ubicaciones</strong>
+          <span>Haz clic para buscar el archivo · Máximo 5 MB</span>
+          {{ form.archivo }}
+        </label>
+        {% for error in form.archivo.errors %}<p class="field-error" role="alert">{{ error }}</p>{% endfor %}
+        {% for error in form.non_field_errors %}<p class="field-error" role="alert">{{ error }}</p>{% endfor %}
+        <button class="button button--primary button--wide" type="submit">Validar y sustituir mapa</button>
+      </form>
+    </section>
+
+    <aside class="format-card">
+      <p class="eyebrow">Formato requerido</p>
+      <h2>Hoja: Ubicaciones</h2>
+      <p>Utiliza un archivo <strong>.xlsx</strong> con una hoja llamada exactamente <strong>Ubicaciones</strong>.</p>
+      <div class="sheet-format">
+        <div><span>1</span><strong>Columnas obligatorias</strong></div>
+        <code>ubicacion | bodega | sector | tipo</code>
+      </div>
+      <ul class="rules">
+        <li>La ubicación funciona como código único.</li>
+        <li>Todos los campos son obligatorios.</li>
+        <li>Usa texto para conservar ceros iniciales.</li>
+        <li>Las ubicaciones repetidas dentro del archivo se rechazan.</li>
+        <li>Una carga válida elimina el mapa anterior y deja únicamente las ubicaciones del archivo nuevo.</li>
+        <li>Si el archivo tiene errores, el mapa vigente permanece intacto.</li>
+      </ul>
+      <a class="template-link" href="{% url 'archivos:location_template' %}">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4v12m0 0 5-5m-5 5-5-5M5 20h14" /></svg>
+        Descargar plantilla de ubicaciones
+      </a>
+    </aside>
+  </div>
+{% endblock %}

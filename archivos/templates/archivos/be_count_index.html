@@ -1,0 +1,43 @@
+{% extends "archivos/base.html" %}
+
+{% block title %}Conteo BE | Inventario 2026{% endblock %}
+
+{% block content %}
+  <div class="page-heading">
+    <div><p class="eyebrow">Archivos maestros</p><h1>Conteo BE</h1><p>Cantidades contadas por código en AGDOSA, Lourdes y Miramar.</p></div>
+    {% if can_administer %}
+      <a class="button button--primary" href="{% url 'archivos:be_count_upload' %}"><svg viewBox="0 0 24 24"><path d="M12 16V4m0 0L7 9m5-5 5 5M5 15v4h14v-4" /></svg>{% if current_load %}Sustituir conteo BE{% else %}Cargar conteo BE{% endif %}</a>
+    {% else %}
+      <button class="button button--primary" type="button" data-admin-permission-open><svg viewBox="0 0 24 24"><path d="M12 16V4m0 0L7 9m5-5 5 5M5 15v4h14v-4" /></svg>Cargar conteo BE</button>
+    {% endif %}
+  </div>
+
+  <section class="summary" aria-label="Resumen del conteo BE">
+    <article><span>Relaciones bodega y código</span><strong>{% if current_load %}{{ current_load.total_registros }}{% else %}0{% endif %}</strong></article>
+    <article><span>Códigos distintos</span><strong>{% if current_load %}{{ current_load.total_codigos }}{% else %}0{% endif %}</strong></article>
+    <article><span>Bodegas admitidas</span><strong>3</strong></article>
+  </section>
+
+  {% if current_load %}
+    <section class="inventory-load-info"><div><span>Archivo vigente</span><strong>{{ current_load.archivo_nombre }}</strong></div><div><span>Actualizado</span><strong>{{ current_load.fecha_carga|date:"d/m/Y H:i" }}</strong></div><div><span>Usuario</span><strong>{{ current_load.cargado_por.username }}</strong></div></section>
+  {% endif %}
+
+  <form class="data-toolbar" method="get">
+    <label class="toolbar-field toolbar-field--search"><span>Buscar código</span><span class="toolbar-control"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7" /><path d="m16 16 4 4" /></svg><input name="q" value="{{ query }}" placeholder="Código del producto" /></span></label>
+    <label class="toolbar-field toolbar-field--select"><span>Bodega</span><select name="bodega"><option value="">Todas</option>{% for warehouse in warehouses %}<option value="{{ warehouse }}" {% if selected_warehouse == warehouse %}selected{% endif %}>{{ warehouse }}</option>{% endfor %}</select></label>
+    <button class="toolbar-submit" type="submit">Buscar</button>
+    {% if query or selected_warehouse %}<a class="toolbar-clear" href="{% url 'archivos:be_count_index' %}">Limpiar</a>{% endif %}
+  </form>
+
+  <section class="data-section">
+    <div class="section-heading"><div><span class="section-icon inventory-icon">BE</span><div><h2>Conteo BE vigente</h2><p>Las cantidades de un mismo código y bodega se consolidan al cargar el Excel.</p></div></div><span class="record-count">{{ details.paginator.count }} registros encontrados</span></div>
+    <div class="table-card"><div class="table-wrap"><table>
+      <thead><tr><th>Bodega</th><th>Código</th><th>Cantidad contada</th></tr></thead>
+      <tbody>{% for item in details %}<tr><td><strong class="warehouse-name">{{ item.bodega }}</strong></td><td><strong class="code">{{ item.codigo }}</strong></td><td><span class="inventory-quantity">{{ item.cantidad|floatformat:"-4" }}</span></td></tr>{% empty %}<tr><td class="empty" colspan="3">{% if current_load %}No hay coincidencias para mostrar.{% else %}Aún no se ha cargado el conteo BE.{% endif %}</td></tr>{% endfor %}</tbody>
+    </table></div>
+    {% if details.paginator.num_pages > 1 %}<nav class="pagination"><a {% if details.has_previous %}href="?q={{ query|urlencode }}&bodega={{ selected_warehouse|urlencode }}&page={{ details.previous_page_number }}"{% endif %}>{% if details.has_previous %}← Anterior{% endif %}</a><span>Página {{ details.number }} de {{ details.paginator.num_pages }}</span><a {% if details.has_next %}href="?q={{ query|urlencode }}&bodega={{ selected_warehouse|urlencode }}&page={{ details.next_page_number }}"{% endif %}>{% if details.has_next %}Siguiente →{% endif %}</a></nav>{% endif %}
+    </div>
+  </section>
+
+  {% if not can_administer %}{% include "archivos/admin_permission_modal.html" %}{% endif %}
+{% endblock %}

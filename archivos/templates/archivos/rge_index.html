@@ -1,0 +1,42 @@
+{% extends "archivos/base.html" %}
+
+{% block title %}RGE | Inventario 2026{% endblock %}
+
+{% block content %}
+  <div class="page-heading">
+    <div><p class="eyebrow">Archivos maestros</p><h1>Registro general de existencias</h1><p>Fuente teórica para conciliar qué productos corresponden a cada ubicación.</p></div>
+    {% if can_administer %}
+      <a class="button button--primary" href="{% url 'archivos:rge_upload' %}"><svg viewBox="0 0 24 24"><path d="M12 16V4m0 0L7 9m5-5 5 5M5 15v4h14v-4" /></svg>{% if current_load %}Sustituir RGE{% else %}Cargar RGE{% endif %}</a>
+    {% else %}
+      <button class="button button--primary" type="button" data-admin-permission-open><svg viewBox="0 0 24 24"><path d="M12 16V4m0 0L7 9m5-5 5 5M5 15v4h14v-4" /></svg>Cargar RGE</button>
+    {% endif %}
+  </div>
+
+  <section class="summary" aria-label="Resumen del RGE">
+    <article><span>Relaciones vigentes</span><strong>{% if current_load %}{{ current_load.total_registros }}{% else %}0{% endif %}</strong></article>
+    <article><span>Códigos distintos</span><strong>{% if current_load %}{{ current_load.total_codigos }}{% else %}0{% endif %}</strong></article>
+    <article><span>Ubicaciones</span><strong>{% if current_load %}{{ current_load.total_ubicaciones }}{% else %}0{% endif %}</strong></article>
+  </section>
+
+  {% if current_load %}
+    <section class="inventory-load-info"><div><span>RGE vigente</span><strong>{{ current_load.archivo_nombre }}</strong></div><div><span>Actualizado</span><strong>{{ current_load.fecha_carga|date:"d/m/Y H:i" }}</strong></div><div><span>Usuario</span><strong>{{ current_load.cargado_por.username }}</strong></div></section>
+
+    <form class="data-toolbar data-toolbar--catalog" method="get">
+      <label class="toolbar-field toolbar-field--search"><span>Buscar en el RGE</span><span class="toolbar-control"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7" /><path d="m16 16 4 4" /></svg><input name="q" value="{{ query }}" placeholder="Código o ubicación" /></span></label>
+      <button class="toolbar-submit" type="submit">Buscar</button>
+      {% if query %}<a class="toolbar-clear" href="{% url 'archivos:rge_index' %}">Limpiar</a>{% endif %}
+    </form>
+  {% endif %}
+
+  <section class="data-section">
+    <div class="section-heading"><div><span class="section-icon">R</span><div><h2>RGE vigente</h2><p>Código, ubicación y cantidad teórica disponible</p></div></div><span class="record-count">{{ details.paginator.count }} registros encontrados</span></div>
+    <div class="table-card"><div class="table-wrap"><table>
+      <thead><tr><th>Código</th><th>Ubicación</th><th>Cantidad</th></tr></thead>
+      <tbody>{% for item in details %}<tr><td><strong class="code">{{ item.codigo }}</strong></td><td><span class="location-code">{{ item.ubicacion }}</span></td><td>{{ item.cantidad|default_if_none:"—"|floatformat:"-4" }}</td></tr>{% empty %}<tr><td class="empty" colspan="3">{% if current_load %}No hay coincidencias para mostrar.{% else %}Aún no se ha cargado el RGE.{% endif %}</td></tr>{% endfor %}</tbody>
+    </table></div>
+    {% if details.paginator.num_pages > 1 %}<nav class="pagination"><a {% if details.has_previous %}href="?q={{ query|urlencode }}&page={{ details.previous_page_number }}"{% endif %}>{% if details.has_previous %}← Anterior{% endif %}</a><span>Página {{ details.number }} de {{ details.paginator.num_pages }}</span><a {% if details.has_next %}href="?q={{ query|urlencode }}&page={{ details.next_page_number }}"{% endif %}>{% if details.has_next %}Siguiente →{% endif %}</a></nav>{% endif %}
+    </div>
+  </section>
+
+  {% if not can_administer %}{% include "archivos/admin_permission_modal.html" %}{% endif %}
+{% endblock %}

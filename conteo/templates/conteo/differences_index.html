@@ -1,0 +1,73 @@
+{% extends "conteo/base.html" %}
+
+{% block title %}Diferencias | Inventario 2026{% endblock %}
+
+{% block content %}
+  <div class="count-heading">
+    <div>
+      <p class="count-eyebrow">Conteo</p>
+      <h1>Diferencias por línea</h1>
+      <p>Consulta los resultados de los archivos de diferencias cargados.</p>
+    </div>
+    {% if can_administer %}
+      <a class="count-button count-button--primary" href="{% url 'conteo:differences_upload' %}">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 16V4m0 0L7 9m5-5 5 5M5 15v4h14v-4" /></svg>
+        Cargar diferencias
+      </a>
+    {% else %}
+      <button class="count-button count-button--primary" type="button" data-admin-permission-open>
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 16V4m0 0L7 9m5-5 5 5M5 15v4h14v-4" /></svg>
+        Cargar diferencias
+      </button>
+    {% endif %}
+  </div>
+
+  <section class="count-summary" aria-label="Resumen de diferencias">
+    <article><span>Cargas realizadas</span><strong>{{ total_loads }}</strong></article>
+    <article><span>Registros acumulados</span><strong>{{ total_differences }}</strong></article>
+    <article>
+      <span>Última actualización</span>
+      <strong class="summary-date">{% if recent_loads.0 %}{{ recent_loads.0.fecha_carga|date:"d/m/Y" }}{% else %}Sin cargas{% endif %}</strong>
+    </article>
+  </section>
+
+  <form class="count-toolbar" method="get">
+    <label class="count-field count-field--line">
+      <span>Línea de producto</span>
+      <select name="linea">
+        <option value="">Última carga de cualquier línea</option>
+        {% for line in line_choices %}
+          <option value="{{ line.pk }}" {% if selected_line == line.pk|stringformat:"s" %}selected{% endif %}>{{ line.nlinea }} · {{ line.descripcion }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <button class="count-toolbar__submit" type="submit">Consultar</button>
+    {% if selected_line %}<a class="count-toolbar__clear" href="{% url 'conteo:differences_index' %}">Limpiar</a>{% endif %}
+  </form>
+
+  {% if latest_load %}
+    <section class="current-load">
+      <div class="current-load__line"><span>{{ latest_load.linea.nlinea }}</span><div><strong>{{ latest_load.linea.descripcion }}</strong><small>Línea seleccionada</small></div></div>
+      <div><span>Archivo</span><strong>{{ latest_load.archivo_nombre }}</strong></div>
+      <div><span>Generado</span><strong>{{ latest_load.fecha_carga|date:"d/m/Y H:i" }}</strong></div>
+      <div><span>Registros</span><strong>{{ latest_load.total_registros }}</strong></div>
+    </section>
+  {% endif %}
+
+  {% if recent_loads %}
+    <section class="load-history">
+      <div class="difference-section__heading"><div><h2>Cargas recientes</h2><p>Últimos archivos procesados en la plataforma.</p></div></div>
+      <div class="history-grid">
+        {% for load in recent_loads %}
+          <a href="?linea={{ load.linea_id }}">
+            <span class="history-line">{{ load.linea.nlinea }}</span>
+            <span><strong>{{ load.archivo_nombre }}</strong><small>{{ load.fecha_carga|date:"d/m/Y H:i" }} · {{ load.total_registros }} registros</small></span>
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 18 6-6-6-6" /></svg>
+          </a>
+        {% endfor %}
+      </div>
+    </section>
+  {% endif %}
+
+  {% if not can_administer %}{% include "archivos/admin_permission_modal.html" %}{% endif %}
+{% endblock %}

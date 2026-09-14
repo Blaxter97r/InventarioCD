@@ -1,0 +1,18 @@
+{% extends "usuarios/user_base.html" %}
+
+{% block title %}Eliminar usuario{% endblock %}
+
+{% block content %}
+  <a class="back-link" href="{% url 'usuarios:user_list' %}">← Volver a usuarios</a>
+  <section class="confirm-card">
+    <span class="warning-icon" aria-hidden="true">!</span>
+    <p class="eyebrow">Acción irreversible</p>
+    <h1>Eliminar usuario</h1>
+    <p>¿Confirmas que deseas eliminar a <strong>{{ managed_user.username }}</strong>? Esta persona perderá inmediatamente el acceso.</p>
+    <form method="post">
+      {% csrf_token %}
+      <a class="button button--secondary" href="{% url 'usuarios:user_list' %}">Cancelar</a>
+      <button class="button button--danger" type="submit">Sí, eliminar usuario</button>
+    </form>
+  </section>
+{% endblock %}

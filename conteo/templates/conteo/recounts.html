@@ -1,0 +1,111 @@
+{% extends "layouts/app_shell.html" %}
+{% load static %}
+{% block title %}Reconteos | Inventario 2026{% endblock %}
+{% block extra_css %}<link rel="stylesheet" href="{% static 'conteo/css/conteo.css' %}?v=20260914-3" />{% endblock %}
+{% block page_name %}Conteo · Reconteos{% endblock %}
+{% block page_content %}
+  <div class="count-page">
+    <div class="count-heading queue-heading">
+      <div><p class="count-eyebrow">Trabajo pendiente</p><h1>Reconteos</h1><p>Líneas con códigos seleccionados por Gerencia que deben volver a contarse.</p></div>
+      <span class="queue-total">{{ recount_total }} línea{{ recount_total|pluralize }} en seguimiento</span>
+    </div>
+    <section class="recount-list">
+      {% for load in recounts %}
+        <article class="recount-card">
+          <div class="recount-card__summary">
+            <div class="queue-line"><span>{{ load.linea.nlinea }}</span><div><strong>{{ load.linea.descripcion }}</strong><small>{% if load.all_assigned_finished %}Reconteo terminado · pendiente nueva carga{% else %}Línea en reconteo{% endif %}</small></div></div>
+            <div class="queue-meta"><span>Reconteo</span><strong>#{{ load.numero_reconteo }}</strong></div>
+            <div class="queue-meta"><span>Códigos por recontar</span><strong>{{ load.selected_count }}</strong></div>
+            <div class="recount-selected-by"><span>Seleccionados por</span><strong>{{ load.seleccionado_por.get_full_name|default:load.seleccionado_por.username }}</strong><small>{{ load.fecha_seleccion|date:"d/m/Y H:i" }} · origen #{{ load.numero_reconteo }}</small></div>
+            <div class="recount-warehouses" aria-label="Códigos por bodega">
+              {% for warehouse in load.warehouse_options %}
+                <div class="recount-warehouse-control">
+                  {% if warehouse.count %}
+                    <a class="recount-warehouse recount-warehouse--{{ warehouse.key }}" href="{% url 'conteo:recount_warehouse_report' load.pk warehouse.key %}" title="Generar PDF para imprimir de {{ warehouse.label }}" data-pdf-download>
+                      <span>{{ warehouse.label }}</span><strong>{{ warehouse.count }}</strong>
+                    </a>
+                    {% if warehouse.inicio.fecha_fin %}
+                      <span class="recount-warehouse-state is-finished" title="Finalizado el {{ warehouse.inicio.fecha_fin|date:'d/m/Y H:i' }} por {{ warehouse.inicio.finalizado_por.username }}">✓ Finalizado · {{ warehouse.inicio.fecha_fin|date:"d/m H:i" }}</span>
+                    {% elif warehouse.inicio %}
+                      <span class="recount-warehouse-state is-started" title="Iniciado el {{ warehouse.inicio.fecha_inicio|date:'d/m/Y H:i' }} por {{ warehouse.inicio.iniciado_por.username }}">● En reconteo · {{ warehouse.inicio.fecha_inicio|date:"d/m H:i" }}</span>
+                      <form method="post" action="{% url 'conteo:finish_recount_warehouse' load.pk warehouse.key %}">
+                        {% csrf_token %}<button class="recount-finish-button" type="submit">Finalizar reconteo</button>
+                      </form>
+                    {% else %}
+                      <form method="post" action="{% url 'conteo:start_recount_warehouse' load.pk warehouse.key %}">
+                        {% csrf_token %}<button class="recount-start-button" type="submit">Iniciar reconteo</button>
+                      </form>
+                    {% endif %}
+                  {% else %}
+                    <span class="recount-warehouse recount-warehouse--{{ warehouse.key }} is-disabled" title="Ningún código seleccionado corresponde a esta bodega">
+                      <span>{{ warehouse.label }}</span><strong>0</strong>
+                    </span>
+                    <span class="recount-warehouse-state">Sin códigos</span>
+                  {% endif %}
+                </div>
+              {% endfor %}
+              {% if load.unclassified_codes %}<span class="recount-unclassified-count" title="Abre Ver códigos para revisar los que no tienen bodega">{{ load.unclassified_codes|length }} sin bodega</span>{% endif %}
+            </div>
+            <details class="recount-details"><summary>Ver códigos</summary></details>
+          </div>
+          {% if load.finished_warehouse_labels %}
+            <div class="recount-finish-alert {% if not load.all_assigned_finished %}is-partial{% endif %}" role="status"><strong>Reconteo finalizado en {{ load.finished_warehouse_labels|join:" y " }}.</strong> {% if load.remaining_warehouse_labels %}Falta finalizar {{ load.remaining_warehouse_labels|join:" y " }}.{% elif load.unclassified_codes %}Las bodegas asignadas terminaron, pero hay códigos sin bodega por revisar.{% else %}Todas las bodegas asignadas terminaron; queda pendiente la siguiente carga de diferencias.{% endif %}</div>
+          {% endif %}
+          <div class="recount-code-panel">
+            {% if load.unclassified_codes %}
+              <p class="recount-unclassified"><strong>Sin bodega asignada:</strong> {{ load.unclassified_codes|join:", " }}. Revisa si estos códigos aparecen en el archivo de conteo cargado; si no aparecen, verifica su ubicación en el RGE y en el mapa.</p>
+            {% endif %}
+            <div class="difference-table-wrap"><table>
+            <thead><tr><th>Sublínea</th><th>Código</th><th>Último conteo</th><th>Existencia</th><th>Diferencia</th><th>Ubicaciones</th></tr></thead>
+            <tbody>{% for item in load.codigos_reconteo %}<tr><td>{{ item.sublinea }}</td><td><strong class="product-code">{{ item.codigo }}</strong></td><td>{{ item.ultimo_conteo|floatformat:"-4" }}</td><td>{{ item.existencia|floatformat:"-4" }}</td><td><span class="difference-value {% if item.diferencia < 0 %}is-negative{% else %}is-positive{% endif %}">{{ item.diferencia|floatformat:"-4" }}</span></td><td>{{ item.ubicacion_1|default:"—" }}{% if item.ubicacion_2 %}, {{ item.ubicacion_2 }}{% endif %}{% if item.ubicacion_3 %}, {{ item.ubicacion_3 }}{% endif %}{% if item.ubicacion_4 %}, {{ item.ubicacion_4 }}{% endif %}</td></tr>{% endfor %}</tbody>
+          </table></div></div>
+        </article>
+      {% empty %}<div class="queue-empty"><span>✓</span><h2>No hay reconteos pendientes</h2><p>Cuando Gerencia seleccione códigos, aparecerá aquí una fila para su línea.</p></div>{% endfor %}
+    </section>
+  </div>
+  <div class="pdf-generating" data-pdf-generating hidden role="status" aria-live="polite">
+    <span class="pdf-generating__spinner" aria-hidden="true"></span>
+    <div><strong>Generando PDF…</strong><small>Estamos preparando las tablas del reconteo.</small></div>
+  </div>
+  <script>
+    document.querySelectorAll('.recount-details').forEach((details) => {
+      details.addEventListener('toggle', () => {
+        details.closest('.recount-card').classList.toggle('is-open', details.open);
+        details.querySelector('summary').textContent = details.open ? 'Ocultar códigos' : 'Ver códigos';
+      });
+    });
+
+    const pdfStatus = document.querySelector('[data-pdf-generating]');
+    document.querySelectorAll('[data-pdf-download]').forEach((link) => {
+      link.addEventListener('click', async (event) => {
+        event.preventDefault();
+        if (link.classList.contains('is-generating')) return;
+        link.classList.add('is-generating');
+        link.setAttribute('aria-disabled', 'true');
+        pdfStatus.hidden = false;
+        try {
+          const response = await fetch(link.href, { credentials: 'same-origin' });
+          if (!response.ok || !response.headers.get('Content-Type')?.includes('application/pdf')) {
+            throw new Error('No fue posible generar el PDF.');
+          }
+          const blobUrl = URL.createObjectURL(await response.blob());
+          const disposition = response.headers.get('Content-Disposition') || '';
+          const filename = disposition.match(/filename="?([^";]+)"?/i)?.[1] || 'reconteo.pdf';
+          const download = document.createElement('a');
+          download.href = blobUrl;
+          download.download = filename;
+          document.body.appendChild(download);
+          download.click();
+          download.remove();
+          window.setTimeout(() => URL.revokeObjectURL(blobUrl), 30000);
+        } catch (error) {
+          window.alert(error.message || 'No fue posible generar el PDF. Intenta nuevamente.');
+        } finally {
+          pdfStatus.hidden = true;
+          link.classList.remove('is-generating');
+          link.removeAttribute('aria-disabled');
+        }
+      });
+    });
+  </script>
+{% endblock %}

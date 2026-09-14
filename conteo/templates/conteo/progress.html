@@ -1,0 +1,141 @@
+{% extends "layouts/app_shell.html" %}
+{% load static %}
+{% block title %}Avance del conteo | Inventario 2026{% endblock %}
+{% block extra_css %}<link rel="stylesheet" href="{% static 'conteo/css/conteo.css' %}?v=20260814-1" />{% endblock %}
+{% block page_name %}Conteo · Avance{% endblock %}
+{% block page_content %}
+  <div class="count-page progress-page">
+    <div class="count-heading progress-heading">
+      <div><p class="count-eyebrow">Operación de inventario</p><h1>Avance del conteo</h1><p>Cobertura global y recorrido operativo por bodega y tipo de ubicación.</p></div>
+      <a class="count-button count-button--primary" href="{% url 'conteo:progress' %}?{{ refresh_query }}">Actualizar ahora</a>
+    </div>
+
+    <aside class="progress-source">
+      <span class="progress-source__dot"></span>
+      <div><strong>{{ source_label }}</strong><p>El avance cruza las ubicaciones vigentes del RGE con el mapa maestro y el último conteo cargado.</p></div>
+      {% if current_load %}<small>{{ current_load.archivo_nombre }} · {{ current_load.fecha_carga|date:"d/m/Y H:i" }}</small>{% else %}<small>Sin conteo cargado</small>{% endif %}
+    </aside>
+
+    <section class="progress-global" aria-labelledby="global-progress-title">
+      <header class="progress-global__header">
+        <div><p class="count-eyebrow">Vista ejecutiva</p><h2 id="global-progress-title">Avance global por bodega</h2><p>Selecciona un tipo para abrir su recorrido operativo.</p></div>
+        <div class="progress-global__total" style="--progress: {{ global_percentage }}%"><strong>{{ global_percentage }}%</strong><span>{{ global_counted_total }} de {{ global_expected_total }}</span></div>
+      </header>
+      <div class="progress-warehouse-grid">
+        {% for warehouse in warehouse_cards %}
+          <article class="progress-warehouse {% if warehouse.value == selected_warehouse %}is-selected{% endif %}">
+            <header><div><span>Bodega</span><h3>{{ warehouse.name }}</h3></div><strong>{{ warehouse.percentage }}%</strong></header>
+            <div class="progress-bar"><i style="width: {{ warehouse.percentage }}%"></i></div>
+            <p>{{ warehouse.counted }} contadas · {{ warehouse.pending }} pendientes</p>
+            <div class="progress-type-list">
+              {% for item in warehouse.types %}
+                <a href="{{ item.url }}" data-progress-floor-link class="progress-type {% if warehouse.value == selected_warehouse and item.value == selected_type %}is-selected{% endif %}">
+                  <span><b>{{ item.name }}</b><small>{{ item.counted }}/{{ item.expected }}</small></span>
+                  <span class="progress-type__bar"><i style="width: {{ item.percentage }}%"></i></span>
+                  <strong>{{ item.percentage }}%</strong>
+                </a>
+              {% endfor %}
+            </div>
+          </article>
+        {% endfor %}
+      </div>
+      {% if map_only_total or rge_only_total %}
+        <aside class="progress-data-alert"><strong>Revisión de fuentes:</strong> {{ map_only_total }} ubicaciones existen solo en el mapa y {{ rge_only_total }} solo en el RGE; no entran al porcentaje hasta coincidir en ambas fuentes.</aside>
+      {% endif %}
+    </section>
+
+    <div class="difference-section__heading progress-scope-heading">
+      <div><p class="count-eyebrow">Detalle seleccionado</p><h2>{{ selected_warehouse|title }} · {{ selected_type|title }}</h2><p>Formato: {{ format_help }}</p></div>
+      {% if invalid_total %}<span class="progress-warning">{{ invalid_total }} ubicaciones no coinciden con el formato</span>{% endif %}
+    </div>
+    {% if expected_total %}
+      <section class="progress-section">
+        <div class="difference-section__heading">
+          <div><h2>Avance por {{ scope_label|lower }}</h2><p>Selecciona una {{ scope_label|lower }} para explorar la jerarquía correspondiente.</p></div>
+          {% if selected_scope %}<a class="progress-floor-reset" href="?{{ selected_query }}" data-progress-floor-link>Ver todas</a>{% endif %}
+        </div>
+        <div class="progress-floor-grid">
+          {% for scope in scopes %}
+            <a href="{{ scope.url }}" class="progress-floor {% if scope.name == selected_scope %}is-selected{% endif %}" data-progress-floor-link>
+              <span>{{ scope_label }} {{ scope.name }}</span><strong>{{ scope.percentage }}%</strong>
+              <div class="progress-bar"><i style="width: {{ scope.percentage }}%"></i></div>
+              <small>{{ scope.counted }} contadas · {{ scope.pending }} pendientes</small>
+            </a>
+          {% endfor %}
+        </div>
+      </section>
+
+      {% if selected_scope %}
+        <section class="progress-explorer" data-progress-explorer
+          data-scope-label="{{ scope_label }}" data-scope-value="{{ selected_scope }}"
+          data-group1-label="{{ group_labels.0 }}" data-group2-label="{{ group_labels.1 }}"
+          data-group3-label="{{ group_labels.2 }}" data-leaf-label="{{ leaf_label }}">
+          <header class="progress-explorer__heading">
+            <div><p class="count-eyebrow">Recorrido operativo</p><h2>Explorar ubicaciones por conciliar</h2><p>Una ubicación sin escaneo es una alerta para investigar, no una orden automática de conteo.</p></div>
+            <div class="progress-explorer__actions">
+              <span class="progress-explorer__floor">{{ scope_label }} {{ selected_scope }}</span>
+              <a class="count-button count-button--primary" href="{% url 'conteo:pending_locations_download' selected_scope %}?{{ selected_query }}"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4v12m0 0 5-5m-5 5-5-5M5 20h14" /></svg>Descargar no contadas</a>
+            </div>
+          </header>
+
+          <aside class="progress-reconciliation-source {% if not current_rge %}is-missing{% endif %}">
+            <span aria-hidden="true">{% if current_rge %}✓{% else %}!{% endif %}</span>
+            <div>{% if current_rge %}<strong>Conteo vs. RGE vigente</strong><p>{{ current_rge.archivo_nombre }} · actualizado {{ current_rge.fecha_carga|date:"d/m/Y H:i" }}</p>{% else %}<strong>Falta cargar el RGE</strong><p>No hay productos teóricos para conciliar.</p>{% endif %}</div>
+          </aside>
+
+          <nav class="progress-explorer__trail" aria-label="Ruta seleccionada">
+            <button type="button" data-progress-back="scope">{{ scope_label }} {{ selected_scope }}</button><i>/</i>
+            <button type="button" data-progress-trail="group1" disabled>{{ group_labels.0 }} —</button><i>/</i>
+            <button type="button" data-progress-trail="group2" disabled>{{ group_labels.1 }} —</button><i>/</i>
+            <button type="button" data-progress-trail="group3" disabled>{{ group_labels.2 }} —</button>
+          </nav>
+
+          <div class="progress-browser" data-progress-browser>
+            <section class="progress-browser__column progress-browser__column--aisles">
+              <header><span>1</span><div><h3>{{ group_labels.0 }}</h3><small data-group1-count></small></div></header>
+              <label class="progress-browser__search"><span aria-hidden="true">⌕</span><input type="search" placeholder="Buscar {{ group_labels.0|lower }}" aria-label="Buscar {{ group_labels.0|lower }}" data-group1-search /></label>
+              <div class="progress-browser__list" data-group1-list></div>
+            </section>
+            <section class="progress-browser__column" data-browser-column="group2">
+              <header><span>2</span><div><h3>{{ group_labels.1 }}</h3><small>Elige una opción</small></div></header>
+              <div class="progress-browser__list" data-group2-list></div>
+            </section>
+            <section class="progress-browser__column" data-browser-column="group3">
+              <header><span>3</span><div><h3>{{ group_labels.2 }}</h3><small>Elige una opción</small></div></header>
+              <div class="progress-browser__list" data-group3-list></div>
+            </section>
+            <section class="progress-browser__column progress-browser__column--locations" data-browser-column="locations" aria-live="polite">
+              <header><span>4</span><div><h3>Ubicaciones</h3><small data-location-count>Pendientes y contadas</small></div></header>
+              <div class="progress-browser__list" data-location-list></div>
+            </section>
+          </div>
+
+          <dialog class="progress-reconciliation" data-reconciliation-dialog>
+            <div class="progress-reconciliation__panel">
+              <header class="progress-reconciliation__header"><div><p class="count-eyebrow">Diagnóstico de ubicación</p><h2 data-reconciliation-title></h2><p data-reconciliation-path></p></div><button type="button" data-reconciliation-close aria-label="Cerrar detalle">×</button></header>
+              <section class="progress-reconciliation__alert" data-reconciliation-alert><span aria-hidden="true">!</span><div><strong data-reconciliation-status></strong><p data-reconciliation-message></p></div></section>
+              <section class="progress-reconciliation__metrics">
+                <article><span>Productos esperados</span><strong data-reconciliation-expected>0</strong><small>según el RGE vigente</small></article>
+                <article><span>Encontrados en el conteo</span><strong data-reconciliation-found>0</strong><small>registrados en otro lugar</small></article>
+                <article><span>No localizados</span><strong data-reconciliation-missing>0</strong><small>sin registro en el conteo</small></article>
+              </section>
+              <div class="progress-reconciliation__table-wrap">
+                <table><thead><tr><th>Producto</th><th>Ubicación RGE</th><th>Estado en conteo</th><th>Registrado en</th></tr></thead><tbody data-reconciliation-products></tbody></table>
+                <div class="progress-reconciliation__empty" data-reconciliation-empty hidden><span aria-hidden="true">i</span><strong>Sin productos asociados</strong><p>La ubicación no tiene productos vinculados en el RGE vigente.</p></div>
+              </div>
+              <footer><p><strong>Importante:</strong> esta comparación confronta presencia y ubicación entre el RGE y el conteo. No compara cantidades.</p></footer>
+            </div>
+          </dialog>
+          <noscript><p class="progress-explorer__noscript">Activa JavaScript para usar el explorador.</p></noscript>
+        </section>
+        {{ progress_tree|json_script:"progress-explorer-data" }}
+      {% else %}
+        <section class="progress-explorer-prompt"><span aria-hidden="true">↑</span><div><h2>Selecciona una {{ scope_label|lower }}</h2><p>Se abrirá el recorrido {{ format_help }}.</p></div></section>
+      {% endif %}
+    {% else %}
+      <section class="queue-empty"><span>⌁</span><h2>No hay ubicaciones aplicables</h2><p>Revisa que las ubicaciones de {{ selected_warehouse|title }} · {{ selected_type|title }} existan tanto en el RGE como en el mapa y respeten el formato indicado.</p></section>
+    {% endif %}
+  </div>
+  <script src="{% static 'conteo/js/progress_scroll.js' %}?v=20260814-1" defer></script>
+  <script src="{% static 'conteo/js/progress_explorer.js' %}?v=20260814-1" defer></script>
+{% endblock %}

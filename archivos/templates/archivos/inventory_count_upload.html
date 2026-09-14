@@ -1,0 +1,27 @@
+{% extends "archivos/base.html" %}
+{% load static %}
+
+{% block title %}Cargar conteo de inventario{% endblock %}
+
+{% block content %}
+  <a class="back-link" href="{% url 'archivos:inventory_count_index' %}">← Volver al conteo</a>
+  <div class="upload-layout">
+    <section class="upload-card">
+      <div class="upload-heading"><span class="upload-icon inventory-icon"><svg viewBox="0 0 24 24"><path d="M12 16V4m0 0L7 9m5-5 5 5M5 15v4h14v-4" /></svg></span><div><p class="eyebrow">Archivo maestro</p><h1>Cargar conteo</h1></div></div>
+      <p class="intro">Importa las cantidades contadas para utilizarlas posteriormente en los procesos de reconteo.</p>
+      <form method="post" enctype="multipart/form-data" novalidate data-inventory-upload-form>
+        {% csrf_token %}
+        <label class="file-drop {% if form.archivo.errors %}file-drop--error{% endif %}" for="{{ form.archivo.id_for_label }}"><span class="excel-mark">XLSX</span><strong>Selecciona el archivo de conteo</strong><span>Haz clic para buscarlo · Máximo 25 MB</span>{{ form.archivo }}</label>
+        {% for error in form.archivo.errors %}<p class="field-error" role="alert">{{ error }}</p>{% endfor %}
+        <button class="button button--primary button--wide" type="submit" data-inventory-upload-submit>Validar y cargar conteo</button>
+      </form>
+    </section>
+    <aside class="format-card">
+      <p class="eyebrow">Datos conservados</p><h2>Cuatro columnas obligatorias</h2><p>El archivo puede incluir otras columnas; la plataforma las ignorará.</p>
+      <div class="sheet-format"><code>Bodega | Ubicacion | Codigo | Cantidad</code></div>
+      <ul class="rules"><li>Los encabezados pueden estar en la fila 1 o 2.</li><li>Se busca una hoja que contenga las cuatro columnas.</li><li>Todos los valores son obligatorios.</li><li>Cantidad debe ser numérica y puede ser cero.</li><li>Cada envío queda visible como una carga independiente y el Admin puede eliminar duplicados.</li></ul>
+      <a class="template-link" href="{% url 'archivos:inventory_count_template' %}"><svg viewBox="0 0 24 24"><path d="M12 4v12m0 0 5-5m-5 5-5-5M5 20h14" /></svg>Descargar plantilla</a>
+    </aside>
+  </div>
+  <script src="{% static 'archivos/js/inventory_count_upload.js' %}?v=20260810-1" defer></script>
+{% endblock %}

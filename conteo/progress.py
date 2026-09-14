@@ -1,0 +1,363 @@
+import re
+from collections import Counter
+from urllib.parse import urlencode
+
+from archivos.models import (
+    CargaConteoInventario,
+    CargaRGE,
+    DetalleConteoInventario,
+    DetalleRGE,
+    Ubicacion,
+)
+from django.db.models.functions import Upper
+
+
+LOCATION_CONFIGS = {
+    ("BODEGA CENTRAL", "PRIMARIO"): {
+        "pattern": re.compile(
+            r"^(?P<piso>[A-Z])(?P<pasillo>\d{2})(?P<lado>[A-Z])-(?P<cuerpo>[A-Z])(?P<nivel>\d{2})$",
+            re.IGNORECASE,
+        ),
+        "scope_key": "piso",
+        "scope_label": "Piso",
+        "groups": (("pasillo", "Pasillo"), ("lado", "Lado"), ("cuerpo", "Estante")),
+        "leaf_key": "nivel",
+        "leaf_label": "Nivel",
+        "format_help": "Piso · Pasillo · Lado · Estante · Nivel",
+    },
+    ("BODEGA CENTRAL", "SECUNDARIO"): {
+        "pattern": re.compile(
+            r"^(?P<piso>[A-Z])(?P<pasillo>\d{2})-(?P<cuerpo>\d{2})(?P<nivel>\d)(?P<lado>[A-Z0-9])$",
+            re.IGNORECASE,
+        ),
+        "scope_key": "piso",
+        "scope_label": "Piso",
+        # En E08-045Y el lado es la última dimensión física.
+        "groups": (("pasillo", "Pasillo"), ("cuerpo", "Estante"), ("nivel", "Nivel")),
+        "leaf_key": "lado",
+        "leaf_label": "Lado",
+        "format_help": "Piso · Pasillo · Estante · Nivel · Lado",
+    },
+    ("RANSA", "PRIMARIO"): {
+        "pattern": re.compile(
+            r"^(?P<zona>[A-Z])-(?P<pasillo>\d{2})-(?P<cuerpo>\d{2})-(?P<nivel>\d{2})$",
+            re.IGNORECASE,
+        ),
+        "scope_key": "zona",
+        "scope_label": "Zona",
+        "groups": (("pasillo", "Pasillo"), ("cuerpo", "Estante"), ("nivel", "Nivel")),
+        "leaf_key": None,
+        "leaf_label": "Ubicación",
+        "format_help": "Zona · Pasillo · Estante · Nivel",
+    },
+    ("RANSA", "SECUNDARIO"): {
+        "pattern": re.compile(
+            r"^(?P<zona>[A-Z])-(?P<pasillo>\d{2})-(?P<cuerpo>\d{2})-(?P<nivel>\d{2})$",
+            re.IGNORECASE,
+        ),
+        "scope_key": "zona",
+        "scope_label": "Zona",
+        "groups": (("pasillo", "Pasillo"), ("cuerpo", "Estante"), ("nivel", "Nivel")),
+        "leaf_key": None,
+        "leaf_label": "Ubicación",
+        "format_help": "Zona · Pasillo · Estante · Nivel",
+    },
+}
+
+# Se conserva el nombre público usado por pruebas e integraciones existentes.
+MEZZANINE_LOCATION_RE = LOCATION_CONFIGS[("BODEGA CENTRAL", "PRIMARIO")]["pattern"]
+
+
+def _normalize(value):
+    return (value or "").strip().upper()
+
+
+def parse_mezzanine_location(value):
+    return _parse_location(value, LOCATION_CONFIGS[("BODEGA CENTRAL", "PRIMARIO")])
+
+
+def _parse_location(value, config):
+    match = config["pattern"].fullmatch((value or "").strip())
+    if not match:
+        return None
+    return {key: item.upper() for key, item in match.groupdict().items()}
+
+
+def _percentage(counted, expected):
+    return round((counted / expected) * 100) if expected else 0
+
+
+def _progress_summary(locations, matched):
+    counted = len(locations.intersection(matched))
+    expected = len(locations)
+    return {
+        "expected": expected,
+        "counted": counted,
+        "pending": expected - counted,
+        "percentage": _percentage(counted, expected),
+    }
+
+
+def _build_reconciliation_data(locations, current_load, current_rge, counted_locations=None):
+    if not locations:
+        return {}
+
+    counted_location_set = counted_locations or set()
+    products_by_location = {location: set() for location in locations}
+    if current_rge:
+        for code, location in DetalleRGE.objects.filter(
+            carga=current_rge, ubicacion__in=locations
+        ).values_list("codigo", "ubicacion"):
+            normalized = _normalize(location)
+            if normalized in products_by_location:
+                products_by_location[normalized].add(_normalize(code))
+
+    product_codes = {code for products in products_by_location.values() for code in products}
+    counted_by_code = {}
+    if current_load and product_codes:
+        counted_rows = (
+            DetalleConteoInventario.objects.filter(carga=current_load)
+            .annotate(codigo_normalizado=Upper("codigo"))
+            .filter(codigo_normalizado__in=product_codes)
+            .values_list("codigo_normalizado", "ubicacion")
+            .order_by()
+            .distinct()
+        )
+        for code, location in counted_rows:
+            counted_by_code.setdefault(_normalize(code), set()).add(_normalize(location))
+
+    reconciliation = {}
+    for location, product_codes_at_location in products_by_location.items():
+        products = []
+        found_elsewhere = 0
+        for code in sorted(product_codes_at_location):
+            counted_here = location in counted_by_code.get(code, set())
+            other_locations = sorted(counted_by_code.get(code, set()) - {location})
+            if other_locations:
+                found_elsewhere += 1
+            products.append({
+                "code": code,
+                "expected_location": location,
+                "counted_locations": other_locations,
+                "counted_elsewhere": bool(other_locations),
+                "counted_here": counted_here,
+            })
+
+        is_counted = location in counted_location_set
+        if is_counted:
+            status, status_label = "counted", "Contada"
+        elif products and found_elsewhere == len(products):
+            status, status_label = "possible_location_error", "Posible error de ubicación"
+        elif found_elsewhere:
+            status, status_label = "needs_review", "Revisión necesaria"
+        elif products:
+            status, status_label = "not_located", "Productos no localizados"
+        elif not current_rge:
+            status, status_label = "no_rge", "RGE no cargado"
+        else:
+            status, status_label = "no_reference", "Sin productos en RGE"
+
+        reconciliation[location] = {
+            "status": status,
+            "status_label": status_label,
+            "counted": is_counted,
+            "expected_products": len(products),
+            "found_elsewhere": found_elsewhere,
+            "products": products,
+        }
+    return reconciliation
+
+
+def _configured_locations(rge_locations):
+    result = {key: {} for key in LOCATION_CONFIGS}
+    invalid = Counter()
+    rows = Ubicacion.objects.values_list("ubicacion", "bodega", "tipo")
+    for location, warehouse, location_type in rows:
+        key = (_normalize(warehouse), _normalize(location_type))
+        config = LOCATION_CONFIGS.get(key)
+        if not config:
+            continue
+        normalized = _normalize(location)
+        if normalized not in rge_locations:
+            continue
+        dimensions = _parse_location(normalized, config)
+        if dimensions:
+            result[key][normalized] = dimensions
+        else:
+            invalid[key] += 1
+    return result, invalid
+
+
+def _build_tree(scoped_expected, matched, reconciliation, config):
+    group_keys = [item[0] for item in config["groups"]]
+
+    def make_level(locations, depth):
+        key = group_keys[depth]
+        child_key = ("sides", "bodies")[depth] if depth < 2 else None
+        nodes = []
+        for name in sorted({scoped_expected[item][key] for item in locations}):
+            node_locations = {
+                location for location in locations if scoped_expected[location][key] == name
+            }
+            node = {"name": name, **_progress_summary(node_locations, matched)}
+            if depth < 2:
+                node[child_key] = make_level(node_locations, depth + 1)
+            else:
+                node["pending_locations"] = []
+                node["locations"] = []
+                for location in sorted(node_locations):
+                    path = [
+                        {"label": config["scope_label"], "value": scoped_expected[location][config["scope_key"]]},
+                        *[
+                            {"label": label, "value": scoped_expected[location][dimension]}
+                            for dimension, label in config["groups"]
+                        ],
+                    ]
+                    if config["leaf_key"]:
+                        path.append({
+                            "label": config["leaf_label"],
+                            "value": scoped_expected[location][config["leaf_key"]],
+                        })
+                    item = {
+                        "code": location,
+                        "level": scoped_expected[location].get("nivel", ""),
+                        "leaf_value": scoped_expected[location].get(config["leaf_key"], "") if config["leaf_key"] else "",
+                        "path": path,
+                        **reconciliation[location],
+                    }
+                    node["locations"].append(item)
+                    if location not in matched:
+                        node["pending_locations"].append(item)
+            nodes.append(node)
+        return nodes
+
+    return make_level(set(scoped_expected), 0) if scoped_expected else []
+
+
+def build_progress_dashboard(selected_floor="", selected_warehouse="", selected_type=""):
+    current_load = CargaConteoInventario.objects.first()
+    current_rge = CargaRGE.objects.first()
+    map_locations = {_normalize(value) for value in Ubicacion.objects.values_list("ubicacion", flat=True)}
+    rge_locations = set()
+    if current_rge:
+        rge_locations = {
+            _normalize(value)
+            for value in DetalleRGE.objects.filter(carga=current_rge)
+            .values_list("ubicacion", flat=True).order_by().distinct()
+        }
+
+    expected_by_config, invalid_by_config = _configured_locations(rge_locations)
+    all_expected = set().union(*(set(items) for items in expected_by_config.values()))
+    counted_locations = set()
+    if current_load and all_expected:
+        counted_locations = {
+            _normalize(value)
+            for value in DetalleConteoInventario.objects.filter(carga=current_load)
+            .annotate(ubicacion_normalizada=Upper("ubicacion"))
+            .filter(ubicacion_normalizada__in=all_expected)
+            .values_list("ubicacion_normalizada", flat=True).order_by().distinct()
+        }
+    all_matched = all_expected.intersection(counted_locations)
+
+    warehouse_cards = []
+    for warehouse in dict.fromkeys(key[0] for key in LOCATION_CONFIGS):
+        type_cards = []
+        warehouse_expected = set()
+        for location_type in (key[1] for key in LOCATION_CONFIGS if key[0] == warehouse):
+            locations = set(expected_by_config[(warehouse, location_type)])
+            warehouse_expected.update(locations)
+            type_cards.append({
+                "name": location_type.title(),
+                "value": location_type,
+                **_progress_summary(locations, all_matched),
+                "url": "?" + urlencode({"bodega": warehouse, "tipo": location_type}),
+            })
+        warehouse_cards.append({
+            "name": warehouse.title(),
+            "value": warehouse,
+            "types": type_cards,
+            **_progress_summary(warehouse_expected, all_matched),
+        })
+
+    requested_key = (_normalize(selected_warehouse), _normalize(selected_type))
+    key = requested_key if requested_key in LOCATION_CONFIGS else ("BODEGA CENTRAL", "PRIMARIO")
+    warehouse, location_type = key
+    config = LOCATION_CONFIGS[key]
+    expected = expected_by_config[key]
+    matched = set(expected).intersection(all_matched)
+
+    scope_key = config["scope_key"]
+    scopes = []
+    for name in sorted({item[scope_key] for item in expected.values()}):
+        locations = {loc for loc, dims in expected.items() if dims[scope_key] == name}
+        scopes.append({
+            "name": name,
+            **_progress_summary(locations, matched),
+            "url": "?" + urlencode({"bodega": warehouse, "tipo": location_type, "piso": name}),
+        })
+    available_scopes = [item["name"] for item in scopes]
+    selected_scope = _normalize(selected_floor)
+    if selected_scope not in available_scopes:
+        selected_scope = ""
+    scoped_expected = {
+        location: dims for location, dims in expected.items()
+        if not selected_scope or dims[scope_key] == selected_scope
+    }
+    reconciliation = _build_reconciliation_data(
+        set(scoped_expected), current_load, current_rge, matched
+    )
+    progress_tree = _build_tree(scoped_expected, matched, reconciliation, config) if selected_scope else []
+
+    group_labels = [label for _, label in config["groups"]]
+    pending_rows = []
+    if selected_scope:
+        for location, dims in sorted(scoped_expected.items()):
+            if location not in matched:
+                values = [selected_scope]
+                values.extend(dims[group_key] for group_key, _ in config["groups"])
+                if config["leaf_key"]:
+                    values.append(dims[config["leaf_key"]])
+                values.append(location)
+                pending_rows.append(tuple(values))
+
+    selected_query = urlencode({"bodega": warehouse, "tipo": location_type})
+    refresh_params = {"bodega": warehouse, "tipo": location_type}
+    if selected_scope:
+        refresh_params["piso"] = selected_scope
+    return {
+        "current_load": current_load,
+        "current_rge": current_rge,
+        "source_label": "Conteo local (desarrollo)",
+        "expected_total": len(expected),
+        "counted_total": len(matched),
+        "pending_total": len(expected) - len(matched),
+        "percentage": _percentage(len(matched), len(expected)),
+        "global_expected_total": len(all_expected),
+        "global_counted_total": len(all_matched),
+        "global_pending_total": len(all_expected) - len(all_matched),
+        "global_percentage": _percentage(len(all_matched), len(all_expected)),
+        "map_only_total": len(map_locations - rge_locations) if current_rge else 0,
+        "rge_only_total": len(rge_locations - map_locations),
+        "warehouse_cards": warehouse_cards,
+        "selected_warehouse": warehouse,
+        "selected_type": location_type,
+        "selected_query": selected_query,
+        "refresh_query": urlencode(refresh_params),
+        "format_help": config["format_help"],
+        "invalid_total": invalid_by_config[key],
+        "scope_label": config["scope_label"],
+        "scopes": scopes,
+        "floors": scopes,
+        "available_floors": available_scopes,
+        "selected_scope": selected_scope,
+        "selected_floor": selected_scope,
+        "group_labels": group_labels,
+        "leaf_label": config["leaf_label"],
+        "progress_tree": progress_tree,
+        "download_headers": (
+            (config["scope_label"], *group_labels, config["leaf_label"], "Ubicación")
+            if config["leaf_key"]
+            else (config["scope_label"], *group_labels, "Ubicación")
+        ),
+        "pending_rows": pending_rows,
+    }

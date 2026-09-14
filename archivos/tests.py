@@ -1,0 +1,867 @@
+from io import BytesIO
+from decimal import Decimal
+
+from django.contrib.auth import get_user_model
+from django.contrib.auth.models import Group
+from django.core.files.uploadedfile import SimpleUploadedFile
+from django.test import TestCase
+from django.urls import reverse
+from openpyxl import Workbook, load_workbook
+
+from .models import (
+    AjusteCantidadConteoInventario,
+    CargaBaseCosto,
+    CargaConteoBE,
+    CargaConteoInventario,
+    CargaRGE,
+    CostoProducto,
+    DetalleConteoBE,
+    DetalleConteoInventario,
+    DetalleRGE,
+    Linea,
+    Sublinea,
+    Ubicacion,
+)
+
+
+def make_workbook(line_rows=None, subline_rows=None):
+    workbook = Workbook()
+    line_sheet = workbook.active
+    line_sheet.title = "Lineas"
+    line_sheet.append(("id_linea", "nlinea", "descripcion"))
+    for row in line_rows or []:
+        line_sheet.append(row)
+
+    subline_sheet = workbook.create_sheet("Sublineas")
+    subline_sheet.append(("id_sublinea", "id_linea", "numero", "descripcion"))
+    for row in subline_rows or []:
+        subline_sheet.append(row)
+
+    output = BytesIO()
+    workbook.save(output)
+    workbook.close()
+    return SimpleUploadedFile(
+        "catalogo.xlsx",
+        output.getvalue(),
+        content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    )
+
+
+def make_location_workbook(rows):
+    workbook = Workbook()
+    sheet = workbook.active
+    sheet.title = "Ubicaciones"
+    sheet.append(("ubicacion", "bodega", "sector", "tipo"))
+    for row in rows:
+        sheet.append(row)
+    output = BytesIO()
+    workbook.save(output)
+    workbook.close()
+    return SimpleUploadedFile(
+        "ubicaciones.xlsx",
+        output.getvalue(),
+        content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    )
+
+
+def make_inventory_count_workbook(rows, headers=None, title_row=False):
+    workbook = Workbook()
+    sheet = workbook.active
+    sheet.title = "Datos conteo"
+    if title_row:
+        sheet.append(("REPORTE DE CONTEO DE INVENTARIO",))
+    sheet.append(headers or ("Bodega", "Ubicacion", "Codigo", "Cantidad"))
+    for row in rows:
+        sheet.append(row)
+    output = BytesIO()
+    workbook.save(output)
+    workbook.close()
+    return SimpleUploadedFile(
+        "conteo_inventario.xlsx",
+        output.getvalue(),
+        content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    )
+
+
+def make_be_count_workbook(rows, headers=None, title_rows=0):
+    workbook = Workbook()
+    sheet = workbook.active
+    sheet.title = "Conteo BE"
+    for index in range(title_rows):
+        sheet.append((f"REPORTE BE {index + 1}",))
+    sheet.append(headers or ("Bodega", "Codigo", "Cantidad"))
+    for row in rows:
+        sheet.append(row)
+    output = BytesIO()
+    workbook.save(output)
+    workbook.close()
+    return SimpleUploadedFile(
+        "conteo_be.xlsx",
+        output.getvalue(),
+        content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    )
+
+
+def make_rge_workbook(rows, headers=None, title_rows=0):
+    workbook = Workbook()
+    sheet = workbook.active
+    sheet.title = "Reporte general"
+    for index in range(title_rows):
+        sheet.append((f"REPORTE RGE {index + 1}",))
+    sheet.append(headers or ("Descripción", "Código", "Ubicación", "Existencia"))
+    for row in rows:
+        sheet.append(row)
+    output = BytesIO()
+    workbook.save(output)
+    workbook.close()
+    return SimpleUploadedFile(
+        "rge.xlsx",
+        output.getvalue(),
+        content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    )
+
+
+def make_cost_base_workbook(rows, headers=None, title_rows=0):
+    workbook = Workbook()
+    sheet = workbook.active
+    sheet.title = "Reporte costos"
+    for index in range(title_rows):
+        sheet.append((f"REPORTE DE COSTOS {index + 1}",))
+    sheet.append(headers or ("Descripción", "Código", "MCOSUC", "Existencia"))
+    for row in rows:
+        sheet.append(row)
+    output = BytesIO()
+    workbook.save(output)
+    workbook.close()
+    return SimpleUploadedFile(
+        "base_costo.xlsx",
+        output.getvalue(),
+        content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    )
+
+
+class ArchivoAccessTests(TestCase):
+    def setUp(self):
+        User = get_user_model()
+        self.admin = User.objects.create_superuser(
+            username="noel.rivera",
+            email="noel@empresa.com",
+            password="admin-seguro-2026",
+        )
+        self.other_user = User.objects.create_user(
+            username="supervisor",
+            password="supervisor-2026",
+        )
+
+    def test_admin_can_view_catalog(self):
+        self.client.force_login(self.admin)
+        self.assertEqual(self.client.get(reverse("archivos:index")).status_code, 200)
+
+    def test_other_user_can_view_catalog(self):
+        self.client.force_login(self.other_user)
+        response = self.client.get(reverse("archivos:index"))
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Permiso de administrador")
+        self.assertContains(response, "data-admin-permission-open")
+
+    def test_admin_can_download_template(self):
+        self.client.force_login(self.admin)
+        response = self.client.get(reverse("archivos:template"))
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("spreadsheetml", response["Content-Type"])
+
+    def test_admin_can_view_location_map(self):
+        self.client.force_login(self.admin)
+        response = self.client.get(reverse("archivos:location_index"))
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Mapa de ubicaciones")
+
+    def test_other_user_can_view_location_map(self):
+        self.client.force_login(self.other_user)
+        response = self.client.get(reverse("archivos:location_index"))
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Permiso de administrador")
+
+    def test_other_user_cannot_open_upload_pages(self):
+        manager = get_user_model().objects.create_user(username="gerente-archivos", password="test-2026")
+        manager.groups.add(Group.objects.get(name="Gerente"))
+        supervisor = get_user_model().objects.create_user(username="supervisor-archivos", password="test-2026")
+        supervisor.groups.add(Group.objects.get(name="Supervisores"))
+        routes = (
+            "archivos:upload",
+            "archivos:location_upload",
+            "archivos:inventory_count_upload",
+            "archivos:be_count_upload",
+            "archivos:rge_upload",
+            "archivos:cost_base_upload",
+        )
+        for user in (self.other_user, supervisor, manager):
+            self.client.force_login(user)
+            for route in routes:
+                with self.subTest(user=user.username, route=route):
+                    self.assertEqual(self.client.get(reverse(route)).status_code, 403)
+
+    def test_authenticated_user_can_view_inventory_count(self):
+        self.client.force_login(self.other_user)
+        response = self.client.get(reverse("archivos:inventory_count_index"))
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Conteo de inventario")
+        self.assertContains(response, "Permiso de administrador")
+
+    def test_authenticated_user_can_view_rge(self):
+        self.client.force_login(self.other_user)
+        response = self.client.get(reverse("archivos:rge_index"))
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Registro general de existencias")
+        self.assertContains(response, "Permiso de administrador")
+
+    def test_authenticated_user_can_view_cost_base(self):
+        self.client.force_login(self.other_user)
+        response = self.client.get(reverse("archivos:cost_base_index"))
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Base de costo")
+        self.assertContains(response, "Permiso de administrador")
+
+    def test_catalog_uses_numeric_order_and_groups_sublines(self):
+        line_10 = Linea.objects.create(id_linea="A", nlinea="10", descripcion="Diez")
+        line_3 = Linea.objects.create(id_linea="B", nlinea="3", descripcion="Tres")
+        line_1 = Linea.objects.create(id_linea="C", nlinea="1", descripcion="Uno")
+        Sublinea.objects.create(id_sublinea="S12", linea=line_1, numero="12", descripcion="Doce")
+        Sublinea.objects.create(id_sublinea="S2", linea=line_1, numero="2", descripcion="Dos")
+        Sublinea.objects.create(id_sublinea="S1", linea=line_1, numero="1", descripcion="Uno")
+
+        self.client.force_login(self.admin)
+        response = self.client.get(reverse("archivos:index"))
+
+        ordered_lines = list(response.context["lineas"].object_list)
+        self.assertEqual([line.nlinea for line in ordered_lines], ["1", "3", "10"])
+        self.assertEqual(
+            [subline.numero for subline in ordered_lines[0].sublineas.all()],
+            ["1", "2", "12"],
+        )
+        self.assertContains(response, "Catálogo por líneas")
+
+
+class ExcelImportTests(TestCase):
+    def setUp(self):
+        self.admin = get_user_model().objects.create_superuser(
+            username="noel.rivera",
+            email="noel@empresa.com",
+            password="admin-seguro-2026",
+        )
+        self.client.force_login(self.admin)
+
+    def test_valid_workbook_creates_lines_and_sublines(self):
+        workbook = make_workbook(
+            line_rows=[("L01", "01", "Motores")],
+            subline_rows=[("SL001", "L01", "001", "Filtros")],
+        )
+        response = self.client.post(reverse("archivos:upload"), {"archivo": workbook})
+        self.assertRedirects(response, reverse("archivos:index"))
+        self.assertTrue(Linea.objects.filter(pk="L01", nlinea="01").exists())
+        self.assertTrue(Sublinea.objects.filter(pk="SL001", linea_id="L01").exists())
+
+    def test_existing_ids_are_updated(self):
+        Linea.objects.create(id_linea="L01", nlinea="01", descripcion="Anterior")
+        workbook = make_workbook(line_rows=[("L01", "01", "Descripción actualizada")])
+        response = self.client.post(reverse("archivos:upload"), {"archivo": workbook})
+        self.assertRedirects(response, reverse("archivos:index"))
+        self.assertEqual(Linea.objects.get(pk="L01").descripcion, "Descripción actualizada")
+
+    def test_unknown_line_rejects_complete_workbook(self):
+        workbook = make_workbook(
+            line_rows=[("L01", "01", "Motores")],
+            subline_rows=[("SL001", "NO-EXISTE", "001", "Filtros")],
+        )
+        response = self.client.post(reverse("archivos:upload"), {"archivo": workbook})
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "no existe")
+        self.assertEqual(Linea.objects.count(), 0)
+        self.assertEqual(Sublinea.objects.count(), 0)
+
+    def test_subline_belongs_to_exactly_one_line(self):
+        line = Linea.objects.create(id_linea="L01", nlinea="01", descripcion="Motores")
+        subline = Sublinea.objects.create(
+            id_sublinea="SL001",
+            linea=line,
+            numero="001",
+            descripcion="Filtros",
+        )
+        self.assertEqual(subline.linea, line)
+        self.assertEqual(list(line.sublineas.all()), [subline])
+
+
+class LocationImportTests(TestCase):
+    def setUp(self):
+        self.admin = get_user_model().objects.create_superuser(
+            username="noel.rivera",
+            email="noel@empresa.com",
+            password="admin-seguro-2026",
+        )
+        self.client.force_login(self.admin)
+
+    def test_valid_workbook_creates_locations(self):
+        workbook = make_location_workbook(
+            [
+                ("A-01-01", "Central", "A", "Picking"),
+                ("B-02-03", "Repuestos", "B", "Reserva"),
+            ]
+        )
+        response = self.client.post(reverse("archivos:location_upload"), {"archivo": workbook})
+        self.assertRedirects(response, reverse("archivos:location_index"))
+        self.assertEqual(Ubicacion.objects.count(), 2)
+        self.assertEqual(Ubicacion.objects.get(pk="A-01-01").sector, "A")
+
+    def test_new_map_replaces_previous_locations(self):
+        Ubicacion.objects.create(
+            ubicacion="A-01-01", bodega="Anterior", sector="A", tipo="Reserva"
+        )
+        Ubicacion.objects.create(
+            ubicacion="OBSOLETA-01", bodega="Anterior", sector="Z", tipo="Reserva"
+        )
+        workbook = make_location_workbook(
+            [
+                ("A-01-01", "Central", "A", "Picking"),
+                ("NUEVA-01", "Central", "B", "Picking"),
+            ]
+        )
+        response = self.client.post(reverse("archivos:location_upload"), {"archivo": workbook})
+        self.assertRedirects(response, reverse("archivos:location_index"))
+        self.assertEqual(Ubicacion.objects.count(), 2)
+        self.assertFalse(Ubicacion.objects.filter(pk="OBSOLETA-01").exists())
+        self.assertTrue(Ubicacion.objects.filter(pk="NUEVA-01").exists())
+        location = Ubicacion.objects.get(pk="A-01-01")
+        self.assertEqual(location.bodega, "Central")
+        self.assertEqual(location.tipo, "Picking")
+
+    def test_duplicate_location_rejects_complete_file(self):
+        workbook = make_location_workbook(
+            [
+                ("A-01-01", "Central", "A", "Picking"),
+                ("A-01-01", "Central", "B", "Reserva"),
+            ]
+        )
+        response = self.client.post(reverse("archivos:location_upload"), {"archivo": workbook})
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "repetida")
+        self.assertEqual(Ubicacion.objects.count(), 0)
+
+    def test_invalid_replacement_preserves_current_map(self):
+        Ubicacion.objects.create(
+            ubicacion="VIGENTE-01", bodega="Central", sector="A", tipo="Picking"
+        )
+        workbook = make_location_workbook(
+            [
+                ("NUEVA-01", "Central", "A", "Picking"),
+                ("NUEVA-01", "Central", "B", "Reserva"),
+            ]
+        )
+
+        response = self.client.post(reverse("archivos:location_upload"), {"archivo": workbook})
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "repetida")
+        self.assertEqual(Ubicacion.objects.count(), 1)
+        self.assertTrue(Ubicacion.objects.filter(pk="VIGENTE-01").exists())
+        self.assertFalse(Ubicacion.objects.filter(pk="NUEVA-01").exists())
+
+    def test_admin_can_download_location_template(self):
+        response = self.client.get(reverse("archivos:location_template"))
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("spreadsheetml", response["Content-Type"])
+
+
+class InventoryCountImportTests(TestCase):
+    def setUp(self):
+        self.admin = get_user_model().objects.create_superuser(
+            username="admin-conteo",
+            email="conteo@empresa.com",
+            password="admin-seguro-2026",
+        )
+        self.client.force_login(self.admin)
+
+    def test_import_keeps_only_required_columns_and_accepts_header_row_two(self):
+        workbook = make_inventory_count_workbook(
+            [
+                ("ignorar", "Central", "ABC-001", "A-01", "1,5", "extra"),
+                ("ignorar", "Central", "ABC-002", "A-02", 0, "extra"),
+            ],
+            headers=("Descripcion", "Bodega", "Codigo", "Ubicacion", "Cantidad", "Otra"),
+            title_row=True,
+        )
+
+        response = self.client.post(
+            reverse("archivos:inventory_count_upload"),
+            {"archivo": workbook},
+        )
+
+        self.assertRedirects(response, reverse("archivos:inventory_count_index"))
+        load = CargaConteoInventario.objects.get()
+        self.assertEqual(load.total_registros, 2)
+        self.assertEqual(load.total_codigos, 2)
+        self.assertEqual(load.total_bodegas, 1)
+        self.assertEqual(load.cargado_por, self.admin)
+        self.assertEqual(DetalleConteoInventario.objects.count(), 2)
+        first = DetalleConteoInventario.objects.get(codigo="ABC-001")
+        second = DetalleConteoInventario.objects.get(codigo="ABC-002")
+        self.assertEqual(first.bodega, "Central")
+        self.assertEqual(first.ubicacion, "A-01")
+        self.assertEqual(first.cantidad, Decimal("1.5"))
+        self.assertEqual(second.cantidad, Decimal("0"))
+
+    def test_missing_required_column_rejects_complete_file(self):
+        workbook = make_inventory_count_workbook(
+            [("Central", "A-01", "ABC-001")],
+            headers=("Bodega", "Ubicacion", "Codigo"),
+        )
+
+        response = self.client.post(
+            reverse("archivos:inventory_count_upload"),
+            {"archivo": workbook},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Faltan las columnas obligatorias: cantidad")
+        self.assertEqual(CargaConteoInventario.objects.count(), 0)
+        self.assertEqual(DetalleConteoInventario.objects.count(), 0)
+
+    def test_history_keeps_uploads_and_supports_selecting_each_count(self):
+        first = make_inventory_count_workbook([("Central", "A-01", "OLD-001", 2)])
+        second = make_inventory_count_workbook([("Repuestos", "B-01", "NEW-001", 7)])
+        self.client.post(reverse("archivos:inventory_count_upload"), {"archivo": first})
+        self.client.post(reverse("archivos:inventory_count_upload"), {"archivo": second})
+
+        response = self.client.get(
+            reverse("archivos:inventory_count_index"),
+            {"q": "NEW-001"},
+        )
+
+        self.assertEqual(CargaConteoInventario.objects.count(), 2)
+        self.assertEqual(DetalleConteoInventario.objects.count(), 2)
+        self.assertContains(response, "NEW-001")
+        self.assertNotContains(response, "OLD-001")
+        self.assertEqual(response.context["current_load"], CargaConteoInventario.objects.first())
+
+        older_load = CargaConteoInventario.objects.last()
+        older_response = self.client.get(
+            reverse("archivos:inventory_count_index"),
+            {"carga": older_load.pk},
+        )
+        self.assertContains(older_response, "OLD-001")
+        self.assertNotContains(older_response, "NEW-001")
+
+    def test_admin_can_delete_duplicate_inventory_count(self):
+        first = make_inventory_count_workbook([("Central", "A-01", "DUP-001", 2)])
+        second = make_inventory_count_workbook([("Central", "A-01", "DUP-001", 2)])
+        self.client.post(reverse("archivos:inventory_count_upload"), {"archivo": first})
+        self.client.post(reverse("archivos:inventory_count_upload"), {"archivo": second})
+        duplicate = CargaConteoInventario.objects.last()
+
+        response = self.client.post(
+            reverse("archivos:inventory_count_delete", args=[duplicate.pk])
+        )
+
+        self.assertRedirects(response, reverse("archivos:inventory_count_index"))
+        self.assertFalse(CargaConteoInventario.objects.filter(pk=duplicate.pk).exists())
+        self.assertEqual(CargaConteoInventario.objects.count(), 1)
+        self.assertEqual(DetalleConteoInventario.objects.count(), 1)
+
+    def test_admin_can_download_inventory_count_template(self):
+        response = self.client.get(reverse("archivos:inventory_count_template"))
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("spreadsheetml", response["Content-Type"])
+
+
+class InventoryCountQuantityEditTests(TestCase):
+    def setUp(self):
+        self.supervisor = get_user_model().objects.create_user(
+            username="supervisor-conteo", password="test-2026"
+        )
+        self.supervisor.groups.add(Group.objects.get(name="Supervisores"))
+        self.client.force_login(self.supervisor)
+        self.load = CargaConteoInventario.objects.create(
+            archivo_nombre="conteo.xlsx",
+            total_registros=1,
+            total_codigos=1,
+            total_bodegas=1,
+            cargado_por=self.supervisor,
+        )
+        self.detail = DetalleConteoInventario.objects.create(
+            carga=self.load,
+            bodega="Bodega Central",
+            ubicacion="A-01",
+            codigo="ABC-001",
+            cantidad=Decimal("5.0000"),
+        )
+        self.url = reverse("archivos:inventory_count_quantity", args=[self.detail.pk])
+
+    def post_quantity(self, quantity, original="5.0000"):
+        return self.client.post(self.url, {
+            "cantidad": quantity,
+            "cantidad_original": original,
+            "return_to": reverse("archivos:inventory_count_index") + "?q=ABC-001",
+        })
+
+    def test_supervisor_can_increase_and_decrease_current_count_used_by_recount(self):
+        from conteo.recount_reports import _group_scanned_locations
+
+        page = self.client.get(reverse("archivos:inventory_count_index"))
+        self.assertTrue(page.context["can_edit_count"])
+        self.assertContains(page, "Editar cantidades")
+
+        response = self.post_quantity("7,25")
+        self.assertRedirects(response, reverse("archivos:inventory_count_index") + "?q=ABC-001")
+        self.detail.refresh_from_db()
+        self.assertEqual(self.detail.cantidad, Decimal("7.25"))
+        grouped, _ = _group_scanned_locations({"ABC-001"}, "central")
+        self.assertEqual(grouped["ABC-001"]["A-01"], Decimal("7.25"))
+
+        self.post_quantity("2", original="7.25")
+        self.detail.refresh_from_db()
+        self.assertEqual(self.detail.cantidad, Decimal("2"))
+        self.assertEqual(
+            list(AjusteCantidadConteoInventario.objects.values_list(
+                "cantidad_anterior", "cantidad_nueva", "modificado_por_id"
+            )),
+            [
+                (Decimal("7.25"), Decimal("2"), self.supervisor.pk),
+                (Decimal("5"), Decimal("7.25"), self.supervisor.pk),
+            ],
+        )
+
+    def test_invalid_and_stale_quantities_are_not_saved(self):
+        for quantity in ("-1", "1.12345", "hola", "100000000000000"):
+            self.post_quantity(quantity)
+            self.detail.refresh_from_db()
+            self.assertEqual(self.detail.cantidad, Decimal("5"))
+        self.post_quantity("8", original="4")
+        self.detail.refresh_from_db()
+        self.assertEqual(self.detail.cantidad, Decimal("5"))
+        self.assertFalse(AjusteCantidadConteoInventario.objects.exists())
+
+    def test_historical_count_is_read_only(self):
+        newer = CargaConteoInventario.objects.create(
+            archivo_nombre="nuevo.xlsx", cargado_por=self.supervisor
+        )
+        page = self.client.get(reverse("archivos:inventory_count_index"), {"carga": self.load.pk})
+        self.assertFalse(page.context["can_edit_count"])
+        self.assertNotContains(page, "Editar cantidades")
+        self.assertNotEqual(newer.pk, self.load.pk)
+        response = self.post_quantity("9")
+        self.assertEqual(response.status_code, 403)
+        self.detail.refresh_from_db()
+        self.assertEqual(self.detail.cantidad, Decimal("5"))
+
+    def test_general_edit_mode_searches_codes_and_saves_visible_quantities_together(self):
+        second = DetalleConteoInventario.objects.create(
+            carga=self.load,
+            bodega="Bodega Central",
+            ubicacion="A-02",
+            codigo="ABC-001",
+            cantidad=Decimal("3"),
+        )
+        other = DetalleConteoInventario.objects.create(
+            carga=self.load,
+            bodega="Bodega Central",
+            ubicacion="B-01",
+            codigo="XYZ-999",
+            cantidad=Decimal("4"),
+        )
+        index_url = reverse("archivos:inventory_count_index")
+        page = self.client.get(index_url, {"editar": "1", "q": "ABC-001"})
+        self.assertTrue(page.context["edit_mode"])
+        self.assertContains(page, 'name="editar" value="1"')
+        self.assertContains(page, f'name="cantidad_{self.detail.pk}"')
+        self.assertContains(page, f'name="cantidad_{second.pk}"')
+        self.assertNotContains(page, f'name="cantidad_{other.pk}"')
+
+        response = self.client.post(reverse("archivos:inventory_count_bulk_quantity"), {
+            "detalle_ids": [self.detail.pk, second.pk],
+            f"original_{self.detail.pk}": "5.0000",
+            f"cantidad_{self.detail.pk}": "8,5",
+            f"original_{second.pk}": "3.0000",
+            f"cantidad_{second.pk}": "1",
+            "return_to": index_url + "?editar=1&q=ABC-001",
+        })
+        self.assertRedirects(response, index_url + "?editar=1&q=ABC-001")
+        self.detail.refresh_from_db()
+        second.refresh_from_db()
+        other.refresh_from_db()
+        self.assertEqual(self.detail.cantidad, Decimal("8.5"))
+        self.assertEqual(second.cantidad, Decimal("1"))
+        self.assertEqual(other.cantidad, Decimal("4"))
+        self.assertEqual(AjusteCantidadConteoInventario.objects.count(), 2)
+
+    def test_general_save_rejects_all_changes_when_one_quantity_is_invalid(self):
+        second = DetalleConteoInventario.objects.create(
+            carga=self.load,
+            bodega="Bodega Central",
+            ubicacion="A-02",
+            codigo="ABC-002",
+            cantidad=Decimal("3"),
+        )
+        response = self.client.post(reverse("archivos:inventory_count_bulk_quantity"), {
+            "detalle_ids": [self.detail.pk, second.pk],
+            f"original_{self.detail.pk}": "5.0000",
+            f"cantidad_{self.detail.pk}": "8",
+            f"original_{second.pk}": "3.0000",
+            f"cantidad_{second.pk}": "-2",
+        })
+        self.assertRedirects(response, reverse("archivos:inventory_count_index"))
+        self.detail.refresh_from_db()
+        second.refresh_from_db()
+        self.assertEqual(self.detail.cantidad, Decimal("5"))
+        self.assertEqual(second.cantidad, Decimal("3"))
+        self.assertFalse(AjusteCantidadConteoInventario.objects.exists())
+
+    def test_general_edit_cannot_update_historical_count_for_any_role(self):
+        bulk_url = reverse("archivos:inventory_count_bulk_quantity")
+        data = {
+            "detalle_ids": [self.detail.pk],
+            f"original_{self.detail.pk}": "5.0000",
+            f"cantidad_{self.detail.pk}": "8",
+        }
+        CargaConteoInventario.objects.create(archivo_nombre="nuevo.xlsx", cargado_por=self.supervisor)
+        self.assertEqual(self.client.post(bulk_url, data).status_code, 403)
+        viewer = get_user_model().objects.create_user(username="viewer-otros", password="test-2026")
+        self.client.force_login(viewer)
+        self.assertEqual(self.client.post(bulk_url, data).status_code, 403)
+        self.detail.refresh_from_db()
+        self.assertEqual(self.detail.cantidad, Decimal("5"))
+
+    def test_manager_and_other_authenticated_users_can_edit_current_count(self):
+        self.assertEqual(self.client.get(self.url).status_code, 404)
+        manager = get_user_model().objects.create_user(username="gerente-conteo", password="test-2026")
+        manager.groups.add(Group.objects.get(name="Gerente"))
+        self.client.force_login(manager)
+        page = self.client.get(reverse("archivos:inventory_count_index"))
+        self.assertTrue(page.context["can_edit_count"])
+        self.assertContains(page, "Editar cantidades")
+        self.assertEqual(self.post_quantity("9").status_code, 302)
+        self.detail.refresh_from_db()
+        self.assertEqual(self.detail.cantidad, Decimal("9"))
+
+        viewer = get_user_model().objects.create_user(username="viewer-conteo", password="test-2026")
+        self.client.force_login(viewer)
+        page = self.client.get(reverse("archivos:inventory_count_index"), {"editar": "1"})
+        self.assertTrue(page.context["edit_mode"])
+        self.assertEqual(self.client.post(reverse("archivos:inventory_count_bulk_quantity"), {
+            "detalle_ids": [self.detail.pk],
+            f"original_{self.detail.pk}": "9.0000",
+            f"cantidad_{self.detail.pk}": "3",
+        }).status_code, 302)
+        self.detail.refresh_from_db()
+        self.assertEqual(self.detail.cantidad, Decimal("3"))
+        self.assertEqual(
+            list(AjusteCantidadConteoInventario.objects.values_list("modificado_por_id", flat=True)),
+            [viewer.pk, manager.pk],
+        )
+
+
+class BECountImportTests(TestCase):
+    def setUp(self):
+        self.admin = get_user_model().objects.create_superuser(
+            username="admin-be", email="be@empresa.com", password="test-2026"
+        )
+        self.client.force_login(self.admin)
+
+    def test_valid_file_consolidates_code_and_warehouse_and_is_searchable(self):
+        workbook = make_be_count_workbook([
+            ("agdosa", "abc-001", "1,5"),
+            ("AGDOSA", "ABC-001", 2),
+            ("Lourdes", "ABC-001", 4),
+            ("Miramar", "XYZ-999", 0),
+        ], title_rows=2)
+        response = self.client.post(reverse("archivos:be_count_upload"), {"archivo": workbook})
+        self.assertRedirects(response, reverse("archivos:be_count_index"))
+        load = CargaConteoBE.objects.get()
+        self.assertEqual(load.total_registros, 3)
+        self.assertEqual(load.total_codigos, 2)
+        self.assertEqual(
+            DetalleConteoBE.objects.get(bodega="AGDOSA", codigo="ABC-001").cantidad,
+            Decimal("3.5"),
+        )
+        page = self.client.get(reverse("archivos:be_count_index"), {"q": "ABC", "bodega": "Lourdes"})
+        self.assertContains(page, "ABC-001")
+        self.assertNotContains(page, "XYZ-999")
+        self.assertContains(page, "Conteo BE")
+
+    def test_invalid_replacement_preserves_previous_count(self):
+        self.client.post(reverse("archivos:be_count_upload"), {
+            "archivo": make_be_count_workbook([("AGDOSA", "ABC-001", 3)])
+        })
+        for invalid in (
+            make_be_count_workbook([("Otra", "ABC-001", 5)]),
+            make_be_count_workbook([("Lourdes", "ABC-001", -1)]),
+            make_be_count_workbook([("Miramar", "ABC-001", "1.12345")]),
+            make_be_count_workbook([("Miramar", "ABC-001", 5)], headers=("Bodega", "Codigo", "Saldo")),
+        ):
+            response = self.client.post(reverse("archivos:be_count_upload"), {"archivo": invalid})
+            self.assertEqual(response.status_code, 200)
+            self.assertTrue(response.context["form"].errors)
+            self.assertEqual(CargaConteoBE.objects.count(), 1)
+            self.assertEqual(DetalleConteoBE.objects.get().cantidad, Decimal("3"))
+
+    def test_valid_replacement_and_template(self):
+        self.client.post(reverse("archivos:be_count_upload"), {
+            "archivo": make_be_count_workbook([("AGDOSA", "OLD-001", 3)])
+        })
+        self.client.post(reverse("archivos:be_count_upload"), {
+            "archivo": make_be_count_workbook([("Miramar", "NEW-001", 7)])
+        })
+        self.assertEqual(CargaConteoBE.objects.count(), 1)
+        self.assertFalse(DetalleConteoBE.objects.filter(codigo="OLD-001").exists())
+        self.assertTrue(DetalleConteoBE.objects.filter(codigo="NEW-001").exists())
+        response = self.client.get(reverse("archivos:be_count_template"))
+        self.assertEqual(response.status_code, 200)
+        workbook = load_workbook(BytesIO(response.content), read_only=True)
+        self.assertEqual(list(workbook.active.values)[0], ("Bodega", "Codigo", "Cantidad"))
+        workbook.close()
+
+
+class RGEImportTests(TestCase):
+    def setUp(self):
+        self.admin = get_user_model().objects.create_superuser(
+            username="admin-rge",
+            email="rge@empresa.com",
+            password="admin-seguro-2026",
+        )
+        self.client.force_login(self.admin)
+
+    def test_import_keeps_only_code_and_final_location(self):
+        workbook = make_rge_workbook(
+            [
+                ("Producto uno", "abc-001", "a01i-b01", 25),
+                ("Producto dos", "ABC-002", "A01I-B02", 10),
+            ],
+            title_rows=5,
+        )
+
+        response = self.client.post(reverse("archivos:rge_upload"), {"archivo": workbook})
+
+        self.assertRedirects(response, reverse("archivos:rge_index"))
+        load = CargaRGE.objects.get()
+        self.assertEqual(load.total_registros, 2)
+        self.assertEqual(load.total_codigos, 2)
+        self.assertEqual(load.total_ubicaciones, 2)
+        self.assertEqual(
+            list(DetalleRGE.objects.values_list("codigo", "ubicacion")),
+            [("ABC-001", "A01I-B01"), ("ABC-002", "A01I-B02")],
+        )
+        self.assertEqual(DetalleRGE.objects.get(codigo="ABC-001").cantidad, Decimal("25"))
+
+    def test_new_rge_replaces_previous_load(self):
+        first = make_rge_workbook([("Anterior", "OLD-001", "A01I-B01", 5)])
+        second = make_rge_workbook([("Nuevo", "NEW-001", "B01I-C01", 7)])
+        self.client.post(reverse("archivos:rge_upload"), {"archivo": first})
+
+        response = self.client.post(reverse("archivos:rge_upload"), {"archivo": second})
+
+        self.assertRedirects(response, reverse("archivos:rge_index"))
+        self.assertEqual(CargaRGE.objects.count(), 1)
+        self.assertEqual(DetalleRGE.objects.count(), 1)
+        self.assertTrue(DetalleRGE.objects.filter(codigo="NEW-001").exists())
+        self.assertFalse(DetalleRGE.objects.filter(codigo="OLD-001").exists())
+
+    def test_invalid_replacement_preserves_current_rge(self):
+        valid = make_rge_workbook([("Anterior", "OLD-001", "A01I-B01", 5)])
+        invalid = make_rge_workbook(
+            [("Anterior", "OLD-001", 5)],
+            headers=("Descripción", "Código", "Existencia"),
+        )
+        self.client.post(reverse("archivos:rge_upload"), {"archivo": valid})
+
+        response = self.client.post(reverse("archivos:rge_upload"), {"archivo": invalid})
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "ubicacion")
+        self.assertEqual(CargaRGE.objects.count(), 1)
+        self.assertTrue(DetalleRGE.objects.filter(codigo="OLD-001").exists())
+
+    def test_admin_can_download_rge_template(self):
+        response = self.client.get(reverse("archivos:rge_template"))
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("spreadsheetml", response["Content-Type"])
+
+
+class CostBaseImportTests(TestCase):
+    def setUp(self):
+        self.admin = get_user_model().objects.create_superuser(
+            username="admin-costos",
+            email="costos@empresa.com",
+            password="admin-seguro-2026",
+        )
+        self.client.force_login(self.admin)
+
+    def test_import_keeps_only_code_and_mcosuc(self):
+        workbook = make_cost_base_workbook(
+            [
+                ("Producto uno", "abc-001", Decimal("12.3456"), 25),
+                ("Producto dos", "ABC-002", "1,50", 10),
+            ],
+            title_rows=4,
+        )
+
+        response = self.client.post(reverse("archivos:cost_base_upload"), {"archivo": workbook})
+
+        self.assertRedirects(response, reverse("archivos:cost_base_index"))
+        load = CargaBaseCosto.objects.get()
+        self.assertEqual(load.total_registros, 2)
+        self.assertEqual(CostoProducto.objects.get(pk="ABC-001").costo, Decimal("12.3456"))
+        self.assertEqual(CostoProducto.objects.get(pk="ABC-002").costo, Decimal("1.5000"))
+
+    def test_new_cost_base_replaces_previous_load(self):
+        first = make_cost_base_workbook([("Anterior", "OLD-001", 5, 1)])
+        second = make_cost_base_workbook([("Nuevo", "NEW-001", 7, 1)])
+        self.client.post(reverse("archivos:cost_base_upload"), {"archivo": first})
+
+        response = self.client.post(reverse("archivos:cost_base_upload"), {"archivo": second})
+
+        self.assertRedirects(response, reverse("archivos:cost_base_index"))
+        self.assertEqual(CargaBaseCosto.objects.count(), 1)
+        self.assertEqual(CostoProducto.objects.count(), 1)
+        self.assertTrue(CostoProducto.objects.filter(pk="NEW-001").exists())
+        self.assertFalse(CostoProducto.objects.filter(pk="OLD-001").exists())
+
+    def test_cost_is_displayed_with_decimal_point(self):
+        workbook = make_cost_base_workbook([("Producto", "ABC-001", "12.3456", 1)])
+        self.client.post(reverse("archivos:cost_base_upload"), {"archivo": workbook})
+
+        response = self.client.get(reverse("archivos:cost_base_index"))
+
+        self.assertContains(response, "12.3456")
+        self.assertNotContains(response, "12,3456")
+
+    def test_invalid_replacement_preserves_current_cost_base(self):
+        valid = make_cost_base_workbook([("Anterior", "OLD-001", 5, 1)])
+        invalid = make_cost_base_workbook(
+            [("Nuevo", "NEW-001", 1)],
+            headers=("Descripción", "Código", "Existencia"),
+        )
+        self.client.post(reverse("archivos:cost_base_upload"), {"archivo": valid})
+
+        response = self.client.post(reverse("archivos:cost_base_upload"), {"archivo": invalid})
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "mcosuc")
+        self.assertEqual(CargaBaseCosto.objects.count(), 1)
+        self.assertTrue(CostoProducto.objects.filter(pk="OLD-001").exists())
+
+    def test_conflicting_duplicate_code_rejects_complete_file(self):
+        workbook = make_cost_base_workbook(
+            [
+                ("Producto", "ABC-001", 5, 1),
+                ("Producto", "ABC-001", 7, 1),
+            ]
+        )
+
+        response = self.client.post(reverse("archivos:cost_base_upload"), {"archivo": workbook})
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "costos diferentes")
+        self.assertEqual(CargaBaseCosto.objects.count(), 0)
+
+    def test_admin_can_download_cost_base_template(self):
+        response = self.client.get(reverse("archivos:cost_base_template"))
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("spreadsheetml", response["Content-Type"])

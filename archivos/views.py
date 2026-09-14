@@ -1,0 +1,683 @@
+from functools import wraps
+from io import BytesIO
+from urllib.parse import urlsplit
+from decimal import Decimal, InvalidOperation
+
+from django.contrib import messages
+from django.contrib.auth.decorators import login_required
+from django.core.exceptions import PermissionDenied
+from django.core.paginator import Paginator
+from django.db import transaction
+from django.db.models import Count, IntegerField, Prefetch, Q
+from django.db.models.functions import Cast, Lower
+from django.http import Http404, HttpResponse
+from django.shortcuts import get_object_or_404, redirect, render
+from django.urls import reverse
+from django.utils.http import url_has_allowed_host_and_scheme
+from openpyxl import Workbook
+from openpyxl.styles import Alignment, Font, PatternFill
+
+from .forms import BECountUploadForm, CostBaseUploadForm, ExcelUploadForm, InventoryCountQuantityForm, InventoryCountUploadForm, RGEUploadForm
+from .models import (
+    AjusteCantidadConteoInventario,
+    CargaBaseCosto,
+    CargaConteoBE,
+    CargaConteoInventario,
+    CargaRGE,
+    CostoProducto,
+    DetalleConteoBE,
+    DetalleConteoInventario,
+    DetalleRGE,
+    Linea,
+    Sublinea,
+    Ubicacion,
+)
+from .services import (
+    ExcelImportError,
+    import_be_count_workbook,
+    import_catalog_workbook,
+    import_cost_base_workbook,
+    import_inventory_count_workbook,
+    import_location_workbook,
+    import_rge_workbook,
+)
+
+
+def admin_required(view):
+    @login_required
+    @wraps(view)
+    def wrapped(request, *args, **kwargs):
+        if not (
+            request.user.is_superuser
+            or request.user.groups.filter(name="Admin").exists()
+        ):
+            raise PermissionDenied
+        return view(request, *args, **kwargs)
+
+    return wrapped
+
+
+@login_required
+def index_view(request):
+    query = request.GET.get("q", "").strip()
+    ordered_sublineas = Sublinea.objects.annotate(
+        numero_orden=Cast("numero", IntegerField()),
+    ).order_by("numero_orden", "numero", "id_sublinea")
+    lineas = Linea.objects.all()
+    if query:
+        lineas = lineas.filter(
+            Q(id_linea__icontains=query)
+            | Q(nlinea__icontains=query)
+            | Q(descripcion__icontains=query)
+            | Q(sublineas__id_sublinea__icontains=query)
+            | Q(sublineas__numero__icontains=query)
+            | Q(sublineas__descripcion__icontains=query)
+        )
+    lineas = (
+        lineas.distinct()
+        .annotate(
+            total_sublineas=Count("sublineas", distinct=True),
+            nlinea_orden=Cast("nlinea", IntegerField()),
+        )
+        .prefetch_related(Prefetch("sublineas", queryset=ordered_sublineas))
+        .order_by("nlinea_orden", "nlinea", "id_linea")
+    )
+
+    context = {
+        "query": query,
+        "lineas": Paginator(lineas, 20).get_page(request.GET.get("lineas_page")),
+        "total_lineas": Linea.objects.count(),
+        "total_sublineas": Sublinea.objects.count(),
+    }
+    return render(request, "archivos/index.html", context)
+
+
+@admin_required
+def upload_view(request):
+    form = ExcelUploadForm(request.POST or None, request.FILES or None)
+    if request.method == "POST" and form.is_valid():
+        try:
+            result = import_catalog_workbook(form.cleaned_data["archivo"])
+        except ExcelImportError as error:
+            form.add_error("archivo", str(error))
+        else:
+            messages.success(
+                request,
+                "Carga completada: "
+                f"{result.lineas_creadas} líneas creadas, "
+                f"{result.lineas_actualizadas} actualizadas, "
+                f"{result.sublineas_creadas} sublíneas creadas y "
+                f"{result.sublineas_actualizadas} actualizadas.",
+            )
+            return redirect("archivos:index")
+    return render(request, "archivos/upload.html", {"form": form})
+
+
+@admin_required
+def template_view(request):
+    workbook = Workbook()
+    instructions = workbook.active
+    instructions.title = "Instrucciones"
+    instructions.append(["FORMATO PARA IMPORTAR LÍNEAS Y SUBLÍNEAS"])
+    instructions.append(["1. No cambies los nombres de las hojas ni de las columnas."])
+    instructions.append(["2. Guarda los códigos como texto si contienen ceros a la izquierda."])
+    instructions.append(["3. Cada id_sublinea debe ser único."])
+    instructions.append(["4. Cada id_linea usado en Sublineas debe existir en la hoja Lineas o en la plataforma."])
+    instructions.append([])
+    instructions.append(["Ejemplo Lineas", "L01", "01", "Repuestos de motor"])
+    instructions.append(["Ejemplo Sublineas", "SL001", "L01", "001", "Filtros de aceite"])
+    instructions.column_dimensions["A"].width = 24
+    instructions.column_dimensions["B"].width = 20
+    instructions.column_dimensions["C"].width = 16
+    instructions.column_dimensions["D"].width = 34
+
+    for title, headers, widths in (
+        ("Lineas", ("id_linea", "nlinea", "descripcion"), (18, 18, 46)),
+        ("Sublineas", ("id_sublinea", "id_linea", "numero", "descripcion"), (20, 18, 18, 46)),
+    ):
+        sheet = workbook.create_sheet(title)
+        sheet.append(headers)
+        sheet.freeze_panes = "A2"
+        sheet.auto_filter.ref = f"A1:{chr(64 + len(headers))}1"
+        for cell in sheet[1]:
+            cell.font = Font(bold=True, color="FFFFFF")
+            cell.fill = PatternFill("solid", fgColor="087F76")
+            cell.alignment = Alignment(horizontal="center")
+        for index, width in enumerate(widths, start=1):
+            sheet.column_dimensions[chr(64 + index)].width = width
+
+    output = BytesIO()
+    workbook.save(output)
+    workbook.close()
+    response = HttpResponse(
+        output.getvalue(),
+        content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    )
+    response["Content-Disposition"] = 'attachment; filename="plantilla_lineas_sublineas.xlsx"'
+    return response
+
+
+@login_required
+def location_index_view(request):
+    query = request.GET.get("q", "").strip()
+    selected_warehouse = request.GET.get("bodega", "").strip()
+    selected_type = request.GET.get("tipo", "").strip()
+    locations = Ubicacion.objects.all()
+
+    if query:
+        locations = locations.filter(
+            Q(ubicacion__icontains=query)
+            | Q(bodega__icontains=query)
+            | Q(sector__icontains=query)
+            | Q(tipo__icontains=query)
+        )
+    if selected_warehouse:
+        locations = locations.filter(bodega=selected_warehouse)
+    if selected_type:
+        locations = locations.filter(tipo=selected_type)
+
+    locations = locations.order_by(Lower("bodega"), Lower("sector"), Lower("ubicacion"))
+    context = {
+        "query": query,
+        "selected_warehouse": selected_warehouse,
+        "selected_type": selected_type,
+        "locations": Paginator(locations, 30).get_page(request.GET.get("page")),
+        "total_locations": Ubicacion.objects.count(),
+        "total_warehouses": Ubicacion.objects.values("bodega").distinct().count(),
+        "total_sectors": Ubicacion.objects.values("bodega", "sector").distinct().count(),
+        "warehouses": Ubicacion.objects.order_by("bodega").values_list("bodega", flat=True).distinct(),
+        "types": Ubicacion.objects.order_by("tipo").values_list("tipo", flat=True).distinct(),
+    }
+    return render(request, "archivos/location_index.html", context)
+
+
+@admin_required
+def location_upload_view(request):
+    form = ExcelUploadForm(request.POST or None, request.FILES or None)
+    if request.method == "POST" and form.is_valid():
+        try:
+            result = import_location_workbook(form.cleaned_data["archivo"])
+        except ExcelImportError as error:
+            form.add_error("archivo", str(error))
+        else:
+            messages.success(
+                request,
+                f"Mapa sustituido: {result.registros} ubicaciones vigentes. "
+                f"Se reemplazaron {result.reemplazadas} ubicaciones del mapa anterior.",
+            )
+            return redirect("archivos:location_index")
+    return render(request, "archivos/location_upload.html", {"form": form})
+
+
+@admin_required
+def location_template_view(request):
+    workbook = Workbook()
+    instructions = workbook.active
+    instructions.title = "Instrucciones"
+    instructions.append(["FORMATO PARA IMPORTAR EL MAPA DE UBICACIONES"])
+    instructions.append(["1. No cambies el nombre de la hoja Ubicaciones."])
+    instructions.append(["2. No cambies los encabezados de las columnas."])
+    instructions.append(["3. Cada ubicación debe ser única."])
+    instructions.append(["4. Usa formato texto para conservar ceros iniciales."])
+    instructions.append([])
+    instructions.append(["Ejemplo", "A-01-01", "Bodega Central", "Sector A", "Picking"])
+    for column, width in zip(("A", "B", "C", "D", "E"), (20, 20, 24, 20, 20)):
+        instructions.column_dimensions[column].width = width
+
+    sheet = workbook.create_sheet("Ubicaciones")
+    headers = ("ubicacion", "bodega", "sector", "tipo")
+    sheet.append(headers)
+    sheet.freeze_panes = "A2"
+    sheet.auto_filter.ref = "A1:D1"
+    for cell in sheet[1]:
+        cell.font = Font(bold=True, color="FFFFFF")
+        cell.fill = PatternFill("solid", fgColor="087F76")
+        cell.alignment = Alignment(horizontal="center")
+    for column, width in zip(("A", "B", "C", "D"), (22, 28, 24, 22)):
+        sheet.column_dimensions[column].width = width
+
+    output = BytesIO()
+    workbook.save(output)
+    workbook.close()
+    response = HttpResponse(
+        output.getvalue(),
+        content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    )
+    response["Content-Disposition"] = 'attachment; filename="plantilla_mapa_ubicaciones.xlsx"'
+    return response
+
+
+@login_required
+def inventory_count_index_view(request):
+    query = request.GET.get("q", "").strip()
+    selected_warehouse = request.GET.get("bodega", "").strip()
+    selected_load = request.GET.get("carga", "").strip()
+    loads = CargaConteoInventario.objects.select_related("cargado_por")
+    latest_load = loads.first()
+    if selected_load:
+        current_load = get_object_or_404(loads, pk=selected_load)
+    else:
+        current_load = latest_load
+    details = DetalleConteoInventario.objects.none()
+    warehouses = []
+    total_codes = 0
+    total_warehouses = 0
+    if current_load:
+        details = current_load.detalles.all()
+        warehouses = details.order_by("bodega").values_list("bodega", flat=True).distinct()
+        total_codes = current_load.total_codigos
+        total_warehouses = current_load.total_bodegas
+        if query:
+            details = details.filter(
+                Q(codigo__icontains=query)
+                | Q(ubicacion__icontains=query)
+                | Q(bodega__icontains=query)
+            )
+        if selected_warehouse:
+            details = details.filter(bodega=selected_warehouse)
+
+    can_edit_count = bool(
+        current_load
+        and latest_load
+        and current_load.pk == latest_load.pk
+    )
+
+    return render(
+        request,
+        "archivos/inventory_count_index.html",
+        {
+            "query": query,
+            "selected_warehouse": selected_warehouse,
+            "selected_load": selected_load,
+            "current_load": current_load,
+            "can_edit_count": can_edit_count,
+            "edit_mode": can_edit_count and request.GET.get("editar") == "1",
+            "details": Paginator(details, 50).get_page(request.GET.get("page")),
+            "warehouses": warehouses,
+            "total_codes": total_codes,
+            "total_warehouses": total_warehouses,
+            "load_history": Paginator(loads, 10).get_page(request.GET.get("cargas_page")),
+        },
+    )
+
+
+@login_required
+def inventory_count_bulk_quantity_view(request):
+    if request.method != "POST":
+        raise Http404
+
+    index_url = reverse("archivos:inventory_count_index")
+    return_to = request.POST.get("return_to", "")
+    if not (
+        url_has_allowed_host_and_scheme(return_to, allowed_hosts={request.get_host()})
+        and urlsplit(return_to).path == index_url
+    ):
+        return_to = index_url
+
+    raw_ids = request.POST.getlist("detalle_ids")
+    try:
+        ids = [int(raw_id) for raw_id in raw_ids]
+    except ValueError:
+        raise Http404
+    if not ids or len(ids) > 50 or len(set(ids)) != len(ids):
+        raise Http404
+
+    with transaction.atomic():
+        latest_load = CargaConteoInventario.objects.first()
+        details = list(DetalleConteoInventario.objects.select_for_update().filter(pk__in=ids))
+        if len(details) != len(ids):
+            raise Http404
+        if not latest_load or any(detail.carga_id != latest_load.pk for detail in details):
+            raise PermissionDenied("Solo se puede modificar el conteo vigente.")
+
+        changes = []
+        for detail in details:
+            original = request.POST.get(f"original_{detail.pk}", "")
+            try:
+                original_quantity = Decimal(original)
+            except InvalidOperation:
+                original_quantity = None
+            if original_quantity != detail.cantidad:
+                messages.error(request, "Una cantidad cambió desde que abriste la página. Actualiza antes de guardar.")
+                return redirect(return_to)
+
+            raw_quantity = request.POST.get(f"cantidad_{detail.pk}", "")
+            try:
+                submitted_quantity = Decimal(raw_quantity.strip().replace(",", "."))
+            except InvalidOperation:
+                submitted_quantity = None
+            if submitted_quantity == detail.cantidad:
+                continue
+            form = InventoryCountQuantityForm({"cantidad": raw_quantity})
+            if not form.is_valid():
+                errors = " ".join(str(error) for field_errors in form.errors.values() for error in field_errors)
+                messages.error(request, f"No se guardaron los cambios. {detail.codigo} en {detail.ubicacion}: {errors}")
+                return redirect(return_to)
+            changes.append((detail, form.cleaned_data["cantidad"]))
+
+        for detail, quantity in changes:
+            AjusteCantidadConteoInventario.objects.create(
+                detalle=detail,
+                cantidad_anterior=detail.cantidad,
+                cantidad_nueva=quantity,
+                modificado_por=request.user,
+            )
+            detail.cantidad = quantity
+            detail.save(update_fields=["cantidad"])
+
+    if changes:
+        messages.success(request, f"Se guardaron {len(changes)} cantidad(es) del conteo vigente.")
+    else:
+        messages.info(request, "No había cantidades nuevas para guardar.")
+    return redirect(return_to)
+
+
+@login_required
+def inventory_count_quantity_view(request, pk):
+    if request.method != "POST":
+        raise Http404
+
+    index_url = reverse("archivos:inventory_count_index")
+    return_to = request.POST.get("return_to", "")
+    if not (
+        url_has_allowed_host_and_scheme(return_to, allowed_hosts={request.get_host()})
+        and urlsplit(return_to).path == index_url
+    ):
+        return_to = index_url
+
+    form = InventoryCountQuantityForm(request.POST)
+    if not form.is_valid():
+        messages.error(request, "No se guardó la cantidad: " + " ".join(
+            str(error) for errors in form.errors.values() for error in errors
+        ))
+        return redirect(return_to)
+
+    with transaction.atomic():
+        detail = get_object_or_404(
+            DetalleConteoInventario.objects.select_for_update(), pk=pk
+        )
+        latest_load = CargaConteoInventario.objects.first()
+        if not latest_load or detail.carga_id != latest_load.pk:
+            raise PermissionDenied("Solo se puede modificar el conteo vigente.")
+
+        original = request.POST.get("cantidad_original", "")
+        try:
+            original_quantity = Decimal(original)
+        except InvalidOperation:
+            original_quantity = None
+        if original_quantity != detail.cantidad:
+            messages.error(request, "La cantidad cambió desde que abriste la página. Actualiza antes de guardar.")
+            return redirect(return_to)
+
+        new_quantity = form.cleaned_data["cantidad"]
+        if new_quantity != detail.cantidad:
+            AjusteCantidadConteoInventario.objects.create(
+                detalle=detail,
+                cantidad_anterior=detail.cantidad,
+                cantidad_nueva=new_quantity,
+                modificado_por=request.user,
+            )
+            detail.cantidad = new_quantity
+            detail.save(update_fields=["cantidad"])
+            messages.success(request, f"Cantidad de {detail.codigo} en {detail.ubicacion} actualizada a {new_quantity}.")
+        else:
+            messages.info(request, "La cantidad ya tenía ese valor.")
+    return redirect(return_to)
+
+
+@admin_required
+def inventory_count_upload_view(request):
+    form = InventoryCountUploadForm(request.POST or None, request.FILES or None)
+    if request.method == "POST" and form.is_valid():
+        try:
+            result = import_inventory_count_workbook(
+                form.cleaned_data["archivo"],
+                request.user,
+            )
+        except ExcelImportError as error:
+            form.add_error("archivo", str(error))
+        else:
+            messages.success(
+                request,
+                f"Conteo cargado: {result.registros} registros conservados.",
+            )
+            return redirect("archivos:inventory_count_index")
+    return render(request, "archivos/inventory_count_upload.html", {"form": form})
+
+
+@admin_required
+def inventory_count_delete_view(request, pk):
+    if request.method != "POST":
+        raise Http404
+    load = get_object_or_404(CargaConteoInventario, pk=pk)
+    file_name = load.archivo_nombre
+    record_count = load.total_registros
+    load.delete()
+    messages.success(
+        request,
+        f"Conteo {file_name} eliminado junto con sus {record_count} registros.",
+    )
+    return redirect("archivos:inventory_count_index")
+
+
+@admin_required
+def inventory_count_template_view(request):
+    workbook = Workbook()
+    sheet = workbook.active
+    sheet.title = "Conteo"
+    headers = ("Bodega", "Ubicacion", "Codigo", "Cantidad")
+    sheet.append(headers)
+    sheet.freeze_panes = "A2"
+    sheet.auto_filter.ref = "A1:D1"
+    for cell in sheet[1]:
+        cell.font = Font(bold=True, color="FFFFFF")
+        cell.fill = PatternFill("solid", fgColor="087F76")
+        cell.alignment = Alignment(horizontal="center")
+    for column, width in zip(("A", "B", "C", "D"), (24, 24, 24, 16)):
+        sheet.column_dimensions[column].width = width
+
+    output = BytesIO()
+    workbook.save(output)
+    workbook.close()
+    response = HttpResponse(
+        output.getvalue(),
+        content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    )
+    response["Content-Disposition"] = 'attachment; filename="plantilla_conteo_inventario.xlsx"'
+    return response
+
+
+@login_required
+def be_count_index_view(request):
+    query = request.GET.get("q", "").strip()
+    warehouse = request.GET.get("bodega", "").strip()
+    current_load = CargaConteoBE.objects.select_related("cargado_por").first()
+    details = current_load.detalles.all() if current_load else DetalleConteoBE.objects.none()
+    if query:
+        details = details.filter(codigo__icontains=query)
+    if warehouse in ("AGDOSA", "Lourdes", "Miramar"):
+        details = details.filter(bodega=warehouse)
+    return render(request, "archivos/be_count_index.html", {
+        "query": query,
+        "selected_warehouse": warehouse,
+        "current_load": current_load,
+        "details": Paginator(details, 50).get_page(request.GET.get("page")),
+        "warehouses": ("AGDOSA", "Lourdes", "Miramar"),
+    })
+
+
+@admin_required
+def be_count_upload_view(request):
+    form = BECountUploadForm(request.POST or None, request.FILES or None)
+    if request.method == "POST" and form.is_valid():
+        try:
+            result = import_be_count_workbook(form.cleaned_data["archivo"], request.user)
+        except ExcelImportError as error:
+            form.add_error("archivo", str(error))
+        else:
+            messages.success(request, f"Conteo BE actualizado: {result.registros} relaciones de bodega y código vigentes.")
+            return redirect("archivos:be_count_index")
+    return render(request, "archivos/be_count_upload.html", {
+        "form": form,
+        "current_load": CargaConteoBE.objects.first(),
+    })
+
+
+@admin_required
+def be_count_template_view(request):
+    workbook = Workbook()
+    sheet = workbook.active
+    sheet.title = "Conteo BE"
+    sheet.append(("Bodega", "Codigo", "Cantidad"))
+    sheet.append(("AGDOSA", "ABC-001", 5))
+    sheet.append(("Lourdes", "ABC-001", 2))
+    sheet.append(("Miramar", "ABC-002", 1))
+    sheet.freeze_panes = "A2"
+    sheet.auto_filter.ref = "A1:C1"
+    for cell in sheet[1]:
+        cell.font = Font(bold=True, color="FFFFFF")
+        cell.fill = PatternFill("solid", fgColor="087F76")
+        cell.alignment = Alignment(horizontal="center")
+    for column, width in zip(("A", "B", "C"), (22, 26, 16)):
+        sheet.column_dimensions[column].width = width
+    output = BytesIO()
+    workbook.save(output)
+    workbook.close()
+    response = HttpResponse(
+        output.getvalue(),
+        content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    )
+    response["Content-Disposition"] = 'attachment; filename="plantilla_conteo_be.xlsx"'
+    return response
+
+
+@login_required
+def rge_index_view(request):
+    query = request.GET.get("q", "").strip()
+    current_load = CargaRGE.objects.select_related("cargado_por").first()
+    details = current_load.detalles.all() if current_load else DetalleRGE.objects.none()
+    if current_load and query:
+        details = details.filter(
+            Q(codigo__icontains=query) | Q(ubicacion__icontains=query)
+        )
+    return render(
+        request,
+        "archivos/rge_index.html",
+        {
+            "query": query,
+            "current_load": current_load,
+            "details": Paginator(details, 50).get_page(request.GET.get("page")),
+        },
+    )
+
+
+@admin_required
+def rge_upload_view(request):
+    form = RGEUploadForm(request.POST or None, request.FILES or None)
+    if request.method == "POST" and form.is_valid():
+        try:
+            result = import_rge_workbook(form.cleaned_data["archivo"], request.user)
+        except ExcelImportError as error:
+            form.add_error("archivo", str(error))
+        else:
+            messages.success(
+                request,
+                f"RGE actualizado: {result.registros} relaciones de código y ubicación vigentes.",
+            )
+            return redirect("archivos:rge_index")
+    return render(
+        request,
+        "archivos/rge_upload.html",
+        {"form": form, "current_load": CargaRGE.objects.first()},
+    )
+
+
+@admin_required
+def rge_template_view(request):
+    workbook = Workbook()
+    sheet = workbook.active
+    sheet.title = "RGE"
+    sheet.append(("Codigo", "Ubicacion", "Cantidad"))
+    sheet.freeze_panes = "A2"
+    sheet.auto_filter.ref = "A1:C1"
+    for cell in sheet[1]:
+        cell.font = Font(bold=True, color="FFFFFF")
+        cell.fill = PatternFill("solid", fgColor="087F76")
+        cell.alignment = Alignment(horizontal="center")
+    sheet.column_dimensions["A"].width = 26
+    sheet.column_dimensions["B"].width = 26
+    sheet.column_dimensions["C"].width = 16
+
+    output = BytesIO()
+    workbook.save(output)
+    workbook.close()
+    response = HttpResponse(
+        output.getvalue(),
+        content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    )
+    response["Content-Disposition"] = 'attachment; filename="plantilla_rge.xlsx"'
+    return response
+
+
+@login_required
+def cost_base_index_view(request):
+    query = request.GET.get("q", "").strip()
+    current_load = CargaBaseCosto.objects.select_related("cargado_por").first()
+    costs = current_load.costos.all() if current_load else CostoProducto.objects.none()
+    if query:
+        costs = costs.filter(codigo__icontains=query)
+    return render(
+        request,
+        "archivos/cost_base_index.html",
+        {
+            "query": query,
+            "current_load": current_load,
+            "costs": Paginator(costs, 50).get_page(request.GET.get("page")),
+        },
+    )
+
+
+@admin_required
+def cost_base_upload_view(request):
+    form = CostBaseUploadForm(request.POST or None, request.FILES or None)
+    if request.method == "POST" and form.is_valid():
+        try:
+            result = import_cost_base_workbook(form.cleaned_data["archivo"], request.user)
+        except ExcelImportError as error:
+            form.add_error("archivo", str(error))
+        else:
+            messages.success(
+                request,
+                f"Base de costo actualizada: {result.registros} códigos vigentes.",
+            )
+            return redirect("archivos:cost_base_index")
+    return render(
+        request,
+        "archivos/cost_base_upload.html",
+        {"form": form, "current_load": CargaBaseCosto.objects.first()},
+    )
+
+
+@admin_required
+def cost_base_template_view(request):
+    workbook = Workbook()
+    sheet = workbook.active
+    sheet.title = "Costos"
+    sheet.append(("Codigo", "MCOSUC"))
+    sheet.freeze_panes = "A2"
+    sheet.auto_filter.ref = "A1:B1"
+    for cell in sheet[1]:
+        cell.font = Font(bold=True, color="FFFFFF")
+        cell.fill = PatternFill("solid", fgColor="087F76")
+        cell.alignment = Alignment(horizontal="center")
+    sheet.column_dimensions["A"].width = 26
+    sheet.column_dimensions["B"].width = 18
+    output = BytesIO()
+    workbook.save(output)
+    workbook.close()
+    response = HttpResponse(
+        output.getvalue(),
+        content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    )
+    response["Content-Disposition"] = 'attachment; filename="plantilla_base_costo.xlsx"'
+    return response

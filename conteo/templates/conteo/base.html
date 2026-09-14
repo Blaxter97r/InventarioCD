@@ -1,0 +1,17 @@
+{% extends "layouts/app_shell.html" %}
+{% load static %}
+
+{% block extra_css %}<link rel="stylesheet" href="{% static 'conteo/css/conteo.css' %}?v=20260813-1" />{% endblock %}
+{% block page_name %}Conteo · Diferencias{% endblock %}
+
+{% block page_content %}
+  <div class="count-page">
+    <nav class="count-tabs" aria-label="Secciones de diferencias">
+      <a class="{% if request.resolver_match.url_name == 'differences_index' or request.resolver_match.url_name == 'differences_upload' %}is-active{% endif %}" href="{% url 'conteo:differences_index' %}">Cargas</a>
+      {% if can_validate_differences %}
+        <a class="{% if request.resolver_match.url_name == 'pending_queue' %}is-active{% endif %}" href="{% url 'conteo:pending_queue' %}">Pendientes {% if pending_recounts %}<span>{{ pending_recounts }}</span>{% endif %}</a>
+      {% endif %}
+    </nav>
+    {% block content %}{% endblock %}
+  </div>
+{% endblock %}

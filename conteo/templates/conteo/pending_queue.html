@@ -1,0 +1,75 @@
+{% extends "conteo/base.html" %}
+{% load static %}
+
+{% block title %}Reconteos pendientes | Inventario 2026{% endblock %}
+
+{% block content %}
+  <div class="count-heading queue-heading">
+    <div><p class="count-eyebrow">Bandeja del Gerente</p><h1>Archivos por revisar</h1><p>Selecciona los códigos que deben pasar al siguiente reconteo.</p></div>
+    <span class="queue-total">{{ pending_total }} línea{{ pending_total|pluralize }} pendiente{{ pending_total|pluralize }}</span>
+  </div>
+
+  <section class="queue-notice">
+    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3 5 6v5c0 4.7 2.9 8 7 10 4.1-2 7-5.3 7-10V6z" /><path d="M12 8v5M12 16h.01" /></svg>
+    <div><strong>Guardar no valida los códigos</strong><p>La selección se enviará a la bandeja Reconteos como trabajo pendiente para esa línea.</p></div>
+  </section>
+
+  <section class="queue-list">
+    {% for load in pending_loads %}
+      <article class="queue-row">
+        <div class="queue-line"><span>{{ load.linea.nlinea }}</span><div><strong>{{ load.linea.descripcion }}</strong><small>Línea de producto</small></div></div>
+        <div class="queue-meta"><span>Carga</span><strong>#{{ load.numero_reconteo }}</strong></div>
+        <div class="queue-file"><span>Archivo</span><strong title="{{ load.archivo_nombre }}">{{ load.archivo_nombre }}</strong><small>{{ load.fecha_carga|date:"d/m/Y H:i" }} · {{ load.cargado_por.username }}</small></div>
+        <div class="queue-meta"><span>Códigos con diferencia</span><strong>{{ load.candidate_count }}</strong></div>
+        <div class="queue-actions">
+          <a class="queue-download {% if not load.archivo_original %}is-disabled{% endif %}" {% if load.archivo_original %}href="{% url 'conteo:download_recount' load.pk %}"{% endif %} title="Descargar archivo">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4v12m0 0 5-5m-5 5-5-5M5 20h14" /></svg>
+          </a>
+          {% if can_administer %}
+            <form method="post" action="{% url 'conteo:delete_pending_recount' load.pk %}" onsubmit="return confirm('¿Eliminar definitivamente el reconteo #{{ load.numero_reconteo }} de la línea {{ load.linea.nlinea }}?');">
+              {% csrf_token %}
+              <button class="queue-delete" type="submit" title="Eliminar reconteo" aria-label="Eliminar reconteo #{{ load.numero_reconteo }}">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M9 7V4h6v3m3 0-1 13H7L6 7m4 4v5m4-5v5" /></svg>
+              </button>
+            </form>
+          {% endif %}
+          <button type="button" data-review-load data-codes-url="{% url 'conteo:pending_codes' load.pk %}" data-save-url="{% url 'conteo:select_recount_codes' load.pk %}" data-finalize-url="{% url 'conteo:finalize_line' load.pk %}">Seleccionar códigos</button>
+        </div>
+      </article>
+    {% empty %}
+      <div class="queue-empty"><span>✓</span><h2>Todo está al día</h2><p>No hay archivos pendientes de revisión por Gerencia.</p></div>
+    {% endfor %}
+  </section>
+
+  <dialog class="review-modal" data-review-modal aria-labelledby="review-modal-title">
+    <div class="review-modal__shell">
+      <header>
+        <div><p class="count-eyebrow">Selección para reconteo</p><h2 id="review-modal-title" data-review-line>Cargando…</h2><p><span data-review-recount></span> · <span data-review-file></span></p></div>
+        <button type="button" data-review-close aria-label="Cerrar"><svg viewBox="0 0 24 24"><path d="m6 6 12 12M18 6 6 18" /></svg></button>
+      </header>
+      <div class="review-tools">
+        <label class="review-select-all"><input type="checkbox" data-review-select-all /> <span>Seleccionar visibles</span></label>
+        <label class="review-search"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7" /><path d="m16 16 4 4" /></svg><input type="search" placeholder="Buscar código o sublínea" data-review-search /></label>
+        <label class="review-filter"><span>Ordenar costo total</span><select data-review-sort><option value="default">Orden original</option><option value="asc">Menor a mayor</option><option value="desc">Mayor a menor</option></select></label>
+        <label class="review-filter"><span>Costo total desde</span><input type="number" step="0.01" placeholder="$0.00" data-review-min-total /></label>
+        <label class="review-filter"><span>Costo total hasta</span><input type="number" step="0.01" placeholder="$100.00" data-review-max-total /></label>
+        <button class="review-clear-filters" type="button" data-review-clear-filters>Limpiar filtros</button>
+        <span data-review-counter>0 seleccionados</span>
+      </div>
+      <form method="post" data-review-form>
+        {% csrf_token %}
+        <input type="hidden" name="select_all" value="0" data-review-all-value />
+        <div class="review-table-wrap">
+          <table><thead><tr><th></th><th>Sublínea</th><th>Código</th><th>Último conteo</th><th>Existencia</th><th>Diferencia</th><th>Costo</th><th>Costo total</th><th>Ubicaciones</th></tr></thead><tbody data-review-body></tbody></table>
+          <div class="review-loading" data-review-loading>Cargando códigos…</div>
+        </div>
+        <footer>
+          <button type="button" data-review-close>Cancelar</button>
+          <button class="is-danger" type="submit" data-finalize-line onclick="return confirm('¿Finalizar esta línea sin enviar códigos a reconteo?');">Finalizar línea</button>
+          <button class="is-primary" type="submit" data-review-save disabled>Enviar a Reconteos</button>
+        </footer>
+      </form>
+    </div>
+  </dialog>
+  <script src="{% static 'conteo/js/recount_review.js' %}?v=20260813-3" defer></script>
+{% endblock %}

@@ -1,0 +1,25 @@
+{% extends "archivos/base.html" %}
+
+{% block title %}Cargar conteo BE | Inventario 2026{% endblock %}
+
+{% block content %}
+  <a class="back-link" href="{% url 'archivos:be_count_index' %}">← Volver al conteo BE</a>
+  <div class="upload-layout">
+    <section class="upload-card">
+      <div class="upload-heading"><span class="upload-icon"><svg viewBox="0 0 24 24"><path d="M12 16V4m0 0L7 9m5-5 5 5M5 15v4h14v-4" /></svg></span><div><p class="eyebrow">Conteo externo</p><h1>{% if current_load %}Sustituir conteo BE{% else %}Cargar conteo BE{% endif %}</h1></div></div>
+      <p class="intro">El Excel cargado reemplazará el conteo BE vigente después de validarse. Sus cantidades aparecerán en el resumen de los próximos PDF de reconteo.</p>
+      <form method="post" enctype="multipart/form-data" novalidate>
+        {% csrf_token %}
+        <label class="file-drop {% if form.archivo.errors %}file-drop--error{% endif %}" for="{{ form.archivo.id_for_label }}"><span class="excel-mark">XLSX</span><strong>Selecciona el archivo de conteo BE</strong><span>Haz clic para buscarlo · Máximo 25 MB</span>{{ form.archivo }}</label>
+        {% for error in form.archivo.errors %}<p class="field-error" role="alert">{{ error }}</p>{% endfor %}
+        <button class="button button--primary button--wide" type="submit">Validar y cargar conteo BE</button>
+      </form>
+    </section>
+    <aside class="format-card">
+      <p class="eyebrow">Formato requerido</p><h2>Tres columnas</h2><p>La plataforma lee Bodega, Codigo y Cantidad; admite los encabezados dentro de las primeras 20 filas.</p>
+      <div class="sheet-format"><code>Bodega | Codigo | Cantidad</code></div>
+      <ul class="rules"><li>Las únicas bodegas admitidas son AGDOSA, Lourdes y Miramar.</li><li>Las cantidades deben ser cero o positivas y tener hasta cuatro decimales.</li><li>Si un código se repite dentro de una bodega, sus cantidades se suman.</li><li>Una carga válida sustituye por completo el conteo BE anterior.</li></ul>
+      <a class="template-link" href="{% url 'archivos:be_count_template' %}"><svg viewBox="0 0 24 24"><path d="M12 4v12m0 0 5-5m-5 5-5-5M5 20h14" /></svg>Descargar plantilla</a>
+    </aside>
+  </div>
+{% endblock %}

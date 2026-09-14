@@ -1,0 +1,11 @@
+{% extends "layouts/app_shell.html" %}
+{% load static %}
+
+{% block extra_css %}<link rel="stylesheet" href="{% static 'archivos/css/archivos.css' %}?v=20260914-2" />{% endblock %}
+{% block page_name %}Archivos maestros{% endblock %}
+
+{% block page_content %}
+  <div class="page">
+    {% block content %}{% endblock %}
+  </div>
+{% endblock %}

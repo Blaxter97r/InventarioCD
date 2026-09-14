@@ -1,0 +1,25 @@
+{% extends "archivos/base.html" %}
+
+{% block title %}Cargar RGE | Inventario 2026{% endblock %}
+
+{% block content %}
+  <a class="back-link" href="{% url 'archivos:rge_index' %}">← Volver al RGE</a>
+  <div class="upload-layout">
+    <section class="upload-card">
+      <div class="upload-heading"><span class="upload-icon"><svg viewBox="0 0 24 24"><path d="M12 16V4m0 0L7 9m5-5 5 5M5 15v4h14v-4" /></svg></span><div><p class="eyebrow">Fuente teórica</p><h1>{% if current_load %}Sustituir RGE{% else %}Cargar RGE{% endif %}</h1></div></div>
+      <p class="intro">La carga nueva reemplazará completamente el RGE vigente. El archivo actual solo se sustituye después de validar correctamente el nuevo.</p>
+      <form method="post" enctype="multipart/form-data" novalidate>
+        {% csrf_token %}
+        <label class="file-drop {% if form.archivo.errors %}file-drop--error{% endif %}" for="{{ form.archivo.id_for_label }}"><span class="excel-mark">XLSX</span><strong>Selecciona el archivo RGE</strong><span>Haz clic para buscarlo · Máximo 25 MB</span>{{ form.archivo }}</label>
+        {% for error in form.archivo.errors %}<p class="field-error" role="alert">{{ error }}</p>{% endfor %}
+        <button class="button button--primary button--wide" type="submit">Validar y sustituir RGE</button>
+      </form>
+    </section>
+    <aside class="format-card">
+      <p class="eyebrow">Datos conservados</p><h2>Solo dos columnas</h2><p>El archivo puede contener muchas columnas y hojas. La plataforma localizará y conservará únicamente estas dos.</p>
+      <div class="sheet-format"><code>Codigo | Ubicacion</code></div>
+      <ul class="rules"><li>Los encabezados pueden aparecer dentro de las primeras 20 filas.</li><li>Código y ubicación son obligatorios; cantidad, existencia o saldo son opcionales.</li><li>Las relaciones duplicadas de código y ubicación se consolidan y sus cantidades se suman.</li><li>Solo existe un RGE vigente; una carga correcta reemplaza la anterior.</li></ul>
+      <a class="template-link" href="{% url 'archivos:rge_template' %}"><svg viewBox="0 0 24 24"><path d="M12 4v12m0 0 5-5m-5 5-5-5M5 20h14" /></svg>Descargar plantilla</a>
+    </aside>
+  </div>
+{% endblock %}

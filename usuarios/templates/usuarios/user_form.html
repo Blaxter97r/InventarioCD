@@ -1,0 +1,49 @@
+{% extends "usuarios/user_base.html" %}
+
+{% block title %}{{ title }}{% endblock %}
+
+{% block content %}
+  <a class="back-link" href="{% url 'usuarios:user_list' %}">← Volver a usuarios</a>
+  <section class="form-card">
+    <div class="form-heading">
+      <p class="eyebrow">Administración</p>
+      <h1>{{ title }}</h1>
+      <p>Completa la información y asigna el grupo de trabajo correspondiente.</p>
+    </div>
+
+    <form method="post" novalidate>
+      {% csrf_token %}
+      {% if form.errors %}
+        <div class="form-errors" role="alert" tabindex="-1">
+          <strong>No fue posible guardar el usuario:</strong>
+          <ul>
+            {% for field in form %}
+              {% for error in field.errors %}
+                <li><strong>{{ field.label }}:</strong> {{ error }}</li>
+              {% endfor %}
+            {% endfor %}
+            {% for error in form.non_field_errors %}<li>{{ error }}</li>{% endfor %}
+          </ul>
+        </div>
+      {% endif %}
+      <div class="form-grid">
+        {% for field in form %}
+          <div class="field {% if field.name == 'email' or field.name == 'new_password' %}field--wide{% endif %} {% if field.name == 'is_active' %}field--check{% endif %}">
+            {% if field.name == 'is_active' %}
+              <label>{{ field }} <span>{{ field.label }}</span></label>
+            {% else %}
+              <label for="{{ field.id_for_label }}">{{ field.label }}</label>
+              {{ field }}
+            {% endif %}
+            {% if field.help_text %}<small>{{ field.help_text|safe }}</small>{% endif %}
+            {% for error in field.errors %}<p class="field-error" role="alert">{{ error }}</p>{% endfor %}
+          </div>
+        {% endfor %}
+      </div>
+      <div class="form-actions">
+        <a class="button button--secondary" href="{% url 'usuarios:user_list' %}">Cancelar</a>
+        <button class="button button--primary" type="submit">Guardar usuario</button>
+      </div>
+    </form>
+  </section>
+{% endblock %}

@@ -1,0 +1,70 @@
+{% extends "usuarios/user_base.html" %}
+
+{% block title %}Administrar usuarios{% endblock %}
+
+{% block content %}
+  <div class="page-heading">
+    <div>
+      <p class="eyebrow">Administración</p>
+      <h1>Usuarios</h1>
+      <p>Gestiona las personas que pueden ingresar a la plataforma.</p>
+    </div>
+    <a class="button button--primary" href="{% url 'usuarios:user_create' %}">+ Crear usuario</a>
+  </div>
+
+  <section class="table-card" aria-label="Listado de usuarios">
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Usuario</th>
+            <th>Correo</th>
+            <th>Grupo</th>
+            <th>Estado</th>
+            <th><span class="sr-only">Acciones</span></th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for managed_user in users %}
+            <tr>
+              <td>
+                <div class="user-cell">
+                  <span class="avatar">{{ managed_user.username|first|upper }}</span>
+                  <div>
+                    <strong>{{ managed_user.get_full_name|default:managed_user.username }}</strong>
+                    <small>@{{ managed_user.username }}</small>
+                  </div>
+                </div>
+              </td>
+              <td>{{ managed_user.email|default:"—" }}</td>
+              <td>
+                {% if managed_user.is_superuser %}
+                  <span class="role role--admin">Admin</span>
+                {% elif managed_user.groups.first %}
+                  <span class="role">{{ managed_user.groups.first.name }}</span>
+                {% else %}
+                  <span class="role role--empty">Sin grupo</span>
+                {% endif %}
+              </td>
+              <td>
+                <span class="status {% if not managed_user.is_active %}status--inactive{% endif %}">
+                  {{ managed_user.is_active|yesno:"Activo,Inactivo" }}
+                </span>
+              </td>
+              <td class="actions">
+                {% if not managed_user.is_superuser %}
+                  <a href="{% url 'usuarios:user_update' managed_user.pk %}">Editar</a>
+                  <a class="danger-link" href="{% url 'usuarios:user_delete' managed_user.pk %}">Eliminar</a>
+                {% else %}
+                  <span class="protected-label">Cuenta protegida</span>
+                {% endif %}
+              </td>
+            </tr>
+          {% empty %}
+            <tr><td class="empty-state" colspan="5">Todavía no hay usuarios registrados.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </section>
+{% endblock %}

@@ -1,0 +1,90 @@
+{% extends "archivos/base.html" %}
+
+{% block title %}Mapa de ubicaciones | Inventario 2026{% endblock %}
+
+{% block content %}
+  <div class="page-heading">
+    <div>
+      <p class="eyebrow">Archivos maestros</p>
+      <h1>Mapa de ubicaciones</h1>
+      <p>Consulta la distribución de posiciones por bodega, sector y tipo.</p>
+    </div>
+    {% if can_administer %}
+      <a class="button button--primary" href="{% url 'archivos:location_upload' %}">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 16V4m0 0L7 9m5-5 5 5M5 15v4h14v-4" /></svg>
+        {% if total_locations %}Sustituir mapa{% else %}Cargar ubicaciones{% endif %}
+      </a>
+    {% else %}
+      <button class="button button--primary" type="button" data-admin-permission-open>
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 16V4m0 0L7 9m5-5 5 5M5 15v4h14v-4" /></svg>
+        {% if total_locations %}Sustituir mapa{% else %}Cargar ubicaciones{% endif %}
+      </button>
+    {% endif %}
+  </div>
+
+  <section class="summary" aria-label="Resumen del mapa">
+    <article><span>Ubicaciones</span><strong>{{ total_locations }}</strong></article>
+    <article><span>Bodegas</span><strong>{{ total_warehouses }}</strong></article>
+    <article><span>Sectores</span><strong>{{ total_sectors }}</strong></article>
+  </section>
+
+  <form class="data-toolbar" method="get">
+    <label class="toolbar-field toolbar-field--search">
+      <span>Buscar ubicación</span>
+      <span class="toolbar-control">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7" /><path d="m16 16 4 4" /></svg>
+        <input name="q" type="search" value="{{ query }}" placeholder="Código, sector o bodega" />
+      </span>
+    </label>
+    <label class="toolbar-field toolbar-field--select">
+      <span>Bodega</span>
+      <select name="bodega">
+        <option value="">Todas</option>
+        {% for warehouse in warehouses %}<option value="{{ warehouse }}" {% if selected_warehouse == warehouse %}selected{% endif %}>{{ warehouse }}</option>{% endfor %}
+      </select>
+    </label>
+    <label class="toolbar-field toolbar-field--select">
+      <span>Tipo</span>
+      <select name="tipo">
+        <option value="">Todos</option>
+        {% for location_type in types %}<option value="{{ location_type }}" {% if selected_type == location_type %}selected{% endif %}>{{ location_type }}</option>{% endfor %}
+      </select>
+    </label>
+    <button class="toolbar-submit" type="submit">Aplicar</button>
+    {% if query or selected_warehouse or selected_type %}<a class="toolbar-clear" href="{% url 'archivos:location_index' %}">Limpiar</a>{% endif %}
+  </form>
+
+  <section class="data-section">
+    <div class="section-heading">
+      <div><span class="section-icon location-icon">U</span><div><h2>Ubicaciones cargadas</h2><p>Ordenadas por bodega, sector y ubicación</p></div></div>
+      <span class="record-count">{{ locations.paginator.count }} registros encontrados</span>
+    </div>
+    <div class="table-card">
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Ubicación</th><th>Bodega</th><th>Sector</th><th>Tipo</th></tr></thead>
+          <tbody>
+            {% for item in locations %}
+              <tr>
+                <td><span class="location-code">{{ item.ubicacion }}</span></td>
+                <td><strong class="warehouse-name">{{ item.bodega }}</strong></td>
+                <td>{{ item.sector }}</td>
+                <td><span class="type-badge">{{ item.tipo }}</span></td>
+              </tr>
+            {% empty %}
+              <tr><td class="empty" colspan="4">No hay ubicaciones para mostrar.</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% if locations.paginator.num_pages > 1 %}
+        <nav class="pagination" aria-label="Paginación de ubicaciones">
+          {% if locations.has_previous %}<a href="?q={{ query|urlencode }}&bodega={{ selected_warehouse|urlencode }}&tipo={{ selected_type|urlencode }}&page={{ locations.previous_page_number }}">← Anterior</a>{% else %}<span></span>{% endif %}
+          <span>Página {{ locations.number }} de {{ locations.paginator.num_pages }}</span>
+          {% if locations.has_next %}<a href="?q={{ query|urlencode }}&bodega={{ selected_warehouse|urlencode }}&tipo={{ selected_type|urlencode }}&page={{ locations.next_page_number }}">Siguiente →</a>{% else %}<span></span>{% endif %}
+        </nav>
+      {% endif %}
+    </div>
+  </section>
+  {% if not can_administer %}{% include "archivos/admin_permission_modal.html" %}{% endif %}
+{% endblock %}

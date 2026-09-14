@@ -1,0 +1,43 @@
+{% extends "layouts/app_shell.html" %}
+{% load static %}
+{% block title %}Resumen por línea | Inventario 2026{% endblock %}
+{% block extra_css %}<link rel="stylesheet" href="{% static 'conteo/css/conteo.css' %}?v=20260914-5" />{% endblock %}
+{% block page_name %}Conteo · Resumen por línea{% endblock %}
+{% block page_content %}
+  <div class="count-page">
+    <div class="count-heading queue-heading">
+      <div><p class="count-eyebrow">Seguimiento por línea</p><h1>Resumen por línea</h1><p>Estado actual y próximo paso de cada línea del inventario.</p></div>
+      <span class="recount-line-total">{{ line_total }} línea{{ line_total|pluralize }}</span>
+    </div>
+    <div class="recount-status-heading">
+      <div><h2>Filtrar por estado</h2><p>Selecciona una tarjeta para ver sus líneas.</p></div>
+      <a class="recount-all-filter {% if not selected_status %}is-active{% endif %}" href="{% url 'conteo:line_summary' %}" {% if not selected_status %}aria-current="page"{% endif %}>Todas las líneas <strong>{{ line_total }}</strong></a>
+    </div>
+    <nav class="recount-status-counts" aria-label="Filtrar líneas por estado">
+      <a class="recount-status-count recount-status-count--carga {% if selected_status == 'PTE_CARGA' %}is-active{% endif %}" href="?estado=PTE_CARGA" {% if selected_status == 'PTE_CARGA' %}aria-current="page"{% endif %}><span>Pte carga</span><strong>{{ status_counts.PTE_CARGA }}</strong><small>línea{{ status_counts.PTE_CARGA|pluralize }}</small></a>
+      <a class="recount-status-count recount-status-count--gerencia {% if selected_status == 'PTE_GERENCIA' %}is-active{% endif %}" href="?estado=PTE_GERENCIA" {% if selected_status == 'PTE_GERENCIA' %}aria-current="page"{% endif %}><span>Pte revisión Gerencia</span><strong>{{ status_counts.PTE_GERENCIA }}</strong><small>línea{{ status_counts.PTE_GERENCIA|pluralize }}</small></a>
+      <a class="recount-status-count recount-status-count--iniciar {% if selected_status == 'PTE_INICIAR' %}is-active{% endif %}" href="?estado=PTE_INICIAR" {% if selected_status == 'PTE_INICIAR' %}aria-current="page"{% endif %}><span>Pte iniciar reconteo</span><strong>{{ status_counts.PTE_INICIAR }}</strong><small>línea{{ status_counts.PTE_INICIAR|pluralize }}</small></a>
+      <a class="recount-status-count recount-status-count--proceso {% if selected_status == 'EN_PROCESO' %}is-active{% endif %}" href="?estado=EN_PROCESO" {% if selected_status == 'EN_PROCESO' %}aria-current="page"{% endif %}><span>En proceso de reconteo</span><strong>{{ status_counts.EN_PROCESO }}</strong><small>línea{{ status_counts.EN_PROCESO|pluralize }}</small></a>
+      <a class="recount-status-count recount-status-count--terminado {% if selected_status == 'RECONTEO_TERMINADO' %}is-active{% endif %}" href="?estado=RECONTEO_TERMINADO" {% if selected_status == 'RECONTEO_TERMINADO' %}aria-current="page"{% endif %}><span>Reconteo terminado</span><strong>{{ status_counts.RECONTEO_TERMINADO }}</strong><small>línea{{ status_counts.RECONTEO_TERMINADO|pluralize }}</small></a>
+      <a class="recount-status-count recount-status-count--finalizada {% if selected_status == 'FINALIZADA' %}is-active{% endif %}" href="?estado=FINALIZADA" {% if selected_status == 'FINALIZADA' %}aria-current="page"{% endif %}><span>Finalizada</span><strong>{{ status_counts.FINALIZADA }}</strong><small>línea{{ status_counts.FINALIZADA|pluralize }}</small></a>
+    </nav>
+    <div class="recount-results-heading"><h2>{{ selected_status_label }}</h2><span>{{ filtered_total }} línea{{ filtered_total|pluralize }}</span></div>
+    <section class="recount-summary-card">
+      <div class="recount-summary-wrap">
+        <table class="recount-summary-table">
+          <thead><tr><th>Línea</th><th># de reconteo</th><th>Status</th><th>Actualización</th></tr></thead>
+          <tbody>
+            {% for item in recount_summary %}
+              <tr class="recount-summary-row">
+                <td><div class="queue-line"><span>{{ item.line.nlinea }}</span><div><strong>{{ item.line.descripcion }}</strong><small>Línea de producto</small></div></div></td>
+                <td>{% if item.recount_number %}<strong class="recount-number">#{{ item.recount_number }}</strong>{% else %}<span class="recount-muted">—</span>{% endif %}</td>
+                <td><span class="recount-status recount-status--{{ item.status_code|lower }}">{{ item.status_label }}</span></td>
+                <td>{% if item.load %}<span class="recount-updated">{{ item.load.fecha_finalizacion|default:item.last_progress_at|default:item.load.fecha_seleccion|default:item.load.fecha_carga|date:"d/m/Y H:i" }}</span>{% else %}<span class="recount-muted">Sin cargas</span>{% endif %}</td>
+              </tr>
+            {% empty %}<tr><td class="difference-empty" colspan="4">{% if selected_status %}No hay líneas con este estado.{% else %}No hay líneas configuradas.{% endif %}</td></tr>{% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </section>
+  </div>
+{% endblock %}

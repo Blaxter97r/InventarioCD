@@ -1,0 +1,57 @@
+{% extends "archivos/base.html" %}
+
+{% block title %}Cargar Excel{% endblock %}
+
+{% block content %}
+  <a class="back-link" href="{% url 'archivos:index' %}">← Volver a los datos</a>
+  <div class="upload-layout">
+    <section class="upload-card">
+      <div class="upload-heading">
+        <span class="upload-icon" aria-hidden="true">
+          <svg viewBox="0 0 24 24"><path d="M12 16V4m0 0L7 9m5-5 5 5M5 15v4h14v-4" /></svg>
+        </span>
+        <div><p class="eyebrow">Importación</p><h1>Cargar archivo Excel</h1></div>
+      </div>
+      <p class="intro">Importa o actualiza líneas y sublíneas en una sola operación segura.</p>
+
+      <form method="post" enctype="multipart/form-data" novalidate>
+        {% csrf_token %}
+        <label class="file-drop {% if form.archivo.errors %}file-drop--error{% endif %}" for="{{ form.archivo.id_for_label }}">
+          <span class="excel-mark">XLSX</span>
+          <strong>Selecciona tu archivo de Excel</strong>
+          <span>Haz clic para buscarlo en tu equipo · Máximo 5 MB</span>
+          {{ form.archivo }}
+        </label>
+        {% for error in form.archivo.errors %}<p class="field-error" role="alert">{{ error }}</p>{% endfor %}
+        {% for error in form.non_field_errors %}<p class="field-error" role="alert">{{ error }}</p>{% endfor %}
+        <button class="button button--primary button--wide" type="submit">Validar y cargar datos</button>
+      </form>
+    </section>
+
+    <aside class="format-card">
+      <p class="eyebrow">Formato requerido</p>
+      <h2>Un libro, dos hojas</h2>
+      <p>El archivo debe llamarse como prefieras, pero debe ser <strong>.xlsx</strong> e incluir estas hojas:</p>
+
+      <div class="sheet-format">
+        <div><span>1</span><strong>Hoja: Lineas</strong></div>
+        <code>id_linea | nlinea | descripcion</code>
+      </div>
+      <div class="sheet-format">
+        <div><span>2</span><strong>Hoja: Sublineas</strong></div>
+        <code>id_sublinea | id_linea | numero | descripcion</code>
+      </div>
+
+      <ul class="rules">
+        <li>La primera fila contiene los encabezados.</li>
+        <li>Todos los campos son obligatorios.</li>
+        <li>Usa formato texto para conservar ceros iniciales.</li>
+        <li>La carga actualiza IDs existentes; no elimina registros ausentes.</li>
+      </ul>
+      <a class="template-link" href="{% url 'archivos:template' %}">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4v12m0 0 5-5m-5 5-5-5M5 20h14" /></svg>
+        Descargar plantilla de Excel
+      </a>
+    </aside>
+  </div>
+{% endblock %}

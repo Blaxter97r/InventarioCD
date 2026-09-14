@@ -1,0 +1,11 @@
+{% extends "layouts/app_shell.html" %}
+{% load static %}
+
+{% block extra_css %}<link rel="stylesheet" href="{% static 'usuarios/css/users.css' %}" />{% endblock %}
+{% block page_name %}Administración de usuarios{% endblock %}
+
+{% block page_content %}
+  <div class="page">
+    {% block content %}{% endblock %}
+  </div>
+{% endblock %}

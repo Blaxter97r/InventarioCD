@@ -1,0 +1,142 @@
+{% load static %}
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>{% block title %}Inventario 2026{% endblock %}</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Manrope:wght@600;700;800&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="{% static 'usuarios/css/app_shell.css' %}?v=20260817-1" />
+    {% block extra_css %}{% endblock %}
+    <script src="{% static 'usuarios/js/sidebar.js' %}?v=20260813-1" defer></script>
+    <script src="{% static 'usuarios/js/permission_modal.js' %}?v=20260808-3" defer></script>
+  </head>
+  <body class="app-body">
+    <div class="app-shell">
+      <aside class="sidebar" id="app-sidebar" aria-label="Navegación principal">
+        <div class="sidebar__header">
+          <a class="sidebar-brand" href="{% url 'usuarios:inicio' %}" title="Inventario 2026">
+            <span class="sidebar-brand__mark" aria-hidden="true">
+              <svg viewBox="0 0 40 40"><path d="M8 11.5 20 5l12 6.5v17L20 35 8 28.5z" /><path d="m8 11.5 12 7 12-7M20 18.5V35" /></svg>
+            </span>
+            <span class="sidebar-brand__text">Inventario<strong>2026</strong></span>
+          </a>
+        </div>
+
+        <nav class="sidebar-nav">
+          <p class="sidebar-nav__label">General</p>
+          <a class="sidebar-link {% if request.resolver_match.namespace == 'usuarios' and request.resolver_match.url_name == 'inicio' %}is-active{% endif %}" href="{% url 'usuarios:inicio' %}" title="Inicio" aria-label="Inicio">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m3 11 9-8 9 8v9a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z" /></svg>
+            <span>Inicio</span>
+          </a>
+
+          <p class="sidebar-nav__label">Archivos maestros</p>
+          <a class="sidebar-link {% if request.resolver_match.namespace == 'archivos' and request.resolver_match.url_name == 'index' or request.resolver_match.namespace == 'archivos' and request.resolver_match.url_name == 'upload' %}is-active{% endif %}" href="{% url 'archivos:index' %}" title="Líneas y sublíneas" aria-label="Líneas y sublíneas">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h6l2 2h8v12H4z" /><path d="M8 11h8M8 15h5" /></svg>
+            <span>Líneas y sublíneas</span>
+          </a>
+          <a class="sidebar-link {% if request.resolver_match.namespace == 'archivos' and request.resolver_match.url_name == 'location_index' or request.resolver_match.namespace == 'archivos' and request.resolver_match.url_name == 'location_upload' %}is-active{% endif %}" href="{% url 'archivos:location_index' %}" title="Mapa de ubicaciones" aria-label="Mapa de ubicaciones">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 10c0 5-8 11-8 11S4 15 4 10a8 8 0 1 1 16 0Z" /><circle cx="12" cy="10" r="2.5" /></svg>
+            <span>Mapa de ubicaciones</span>
+          </a>
+          <a class="sidebar-link {% if request.resolver_match.namespace == 'archivos' and request.resolver_match.url_name == 'inventory_count_index' or request.resolver_match.namespace == 'archivos' and request.resolver_match.url_name == 'inventory_count_upload' %}is-active{% endif %}" href="{% url 'archivos:inventory_count_index' %}" title="Conteo de inventario" aria-label="Conteo de inventario">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h16v14H4zM8 9h8M8 13h5M16 12v5m-2.5-2.5h5" /></svg>
+            <span>Conteo de inventario</span>
+          </a>
+          <a class="sidebar-link {% if request.resolver_match.namespace == 'archivos' and request.resolver_match.url_name == 'be_count_index' or request.resolver_match.namespace == 'archivos' and request.resolver_match.url_name == 'be_count_upload' %}is-active{% endif %}" href="{% url 'archivos:be_count_index' %}" title="Conteo BE" aria-label="Conteo BE">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h16v14H4zM8 9h8M8 13h5M16 12v5m-2.5-2.5h5" /></svg>
+            <span>Conteo BE</span>
+          </a>
+          <a class="sidebar-link {% if request.resolver_match.namespace == 'archivos' and request.resolver_match.url_name == 'rge_index' or request.resolver_match.namespace == 'archivos' and request.resolver_match.url_name == 'rge_upload' %}is-active{% endif %}" href="{% url 'archivos:rge_index' %}" title="Registro general de existencias" aria-label="Registro general de existencias">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 4h14v16H5zM8 8h8M8 12h8M8 16h5" /><path d="m15 15 1.5 1.5L20 13" /></svg>
+            <span>RGE</span>
+          </a>
+          <a class="sidebar-link {% if request.resolver_match.namespace == 'archivos' and request.resolver_match.url_name == 'cost_base_index' or request.resolver_match.namespace == 'archivos' and request.resolver_match.url_name == 'cost_base_upload' %}is-active{% endif %}" href="{% url 'archivos:cost_base_index' %}" title="Base de costo" aria-label="Base de costo">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9" /><path d="M15 8.5h-4a2 2 0 0 0 0 4h2a2 2 0 0 1 0 4H9M12 6v2.5M12 16.5V19" /></svg>
+            <span>Base de costo</span>
+          </a>
+
+          <p class="sidebar-nav__label">Conteo</p>
+          <a class="sidebar-link {% if request.resolver_match.namespace == 'conteo' and request.resolver_match.url_name != 'recounts' and request.resolver_match.url_name != 'line_summary' and request.resolver_match.url_name != 'progress' and request.resolver_match.url_name != 'progress_general' %}is-active{% endif %}" href="{% if can_validate_differences %}{% url 'conteo:pending_queue' %}{% else %}{% url 'conteo:differences_index' %}{% endif %}" title="Diferencias" aria-label="Diferencias">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h16v14H4z" /><path d="M8 9h8M8 13h3M14 13h2M8 17h5" /></svg>
+            <span>Diferencias</span>
+            {% if can_validate_differences and pending_recounts %}<b class="sidebar-link__badge">{{ pending_recounts }}</b>{% endif %}
+          </a>
+          <a class="sidebar-link {% if request.resolver_match.namespace == 'conteo' and request.resolver_match.url_name == 'recounts' %}is-active{% endif %}" href="{% url 'conteo:recounts' %}" title="Reconteos" aria-label="Reconteos">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 7h11a4 4 0 0 1 4 4v1M8 4 5 7l3 3M19 17H8a4 4 0 0 1-4-4v-1m12 8 3-3-3-3" /></svg>
+            <span>Reconteos</span>
+            {% if selected_recount_lines %}<b class="sidebar-link__badge">{{ selected_recount_lines }}</b>{% endif %}
+          </a>
+          <a class="sidebar-link {% if request.resolver_match.namespace == 'conteo' and request.resolver_match.url_name == 'line_summary' %}is-active{% endif %}" href="{% url 'conteo:line_summary' %}" title="Resumen por línea" aria-label="Resumen por línea">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h16v14H4zM8 9h8M8 13h8M8 17h5" /></svg>
+            <span>Resumen por línea</span>
+          </a>
+          <details class="sidebar-group" {% if request.resolver_match.namespace == 'conteo' and request.resolver_match.url_name == 'progress' or request.resolver_match.namespace == 'conteo' and request.resolver_match.url_name == 'progress_general' %}open{% endif %}>
+            <summary class="sidebar-link {% if request.resolver_match.namespace == 'conteo' and request.resolver_match.url_name == 'progress' or request.resolver_match.namespace == 'conteo' and request.resolver_match.url_name == 'progress_general' %}is-active{% endif %}" title="Avance" aria-label="Mostrar opciones de avance">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 19V5M4 19h16M8 16v-4M12 16V8M16 16v-6M20 16V5" /></svg>
+              <span>Avance</span>
+              <svg class="sidebar-group__chevron" viewBox="0 0 20 20" aria-hidden="true"><path d="m6 8 4 4 4-4" /></svg>
+            </summary>
+            <div class="sidebar-subnav">
+              <a class="sidebar-subnav__link {% if request.resolver_match.url_name == 'progress_general' %}is-active{% endif %}" href="{% url 'conteo:progress_general' %}"><span>Avance general</span></a>
+              <a class="sidebar-subnav__link {% if request.resolver_match.url_name == 'progress' %}is-active{% endif %}" href="{% url 'conteo:progress' %}"><span>Avance detallado</span></a>
+            </div>
+          </details>
+
+          {% if can_administer %}
+            <p class="sidebar-nav__label">Administración</p>
+            <a class="sidebar-link {% if request.resolver_match.namespace == 'usuarios' and 'user_' in request.resolver_match.url_name %}is-active{% endif %}" href="{% url 'usuarios:user_list' %}" title="Usuarios" aria-label="Usuarios">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8ZM17 11l2 2 4-5" /></svg>
+              <span>Usuarios</span>
+            </a>
+          {% endif %}
+        </nav>
+
+        <div class="sidebar-user">
+          <span class="sidebar-user__avatar">{{ request.user.username|first|upper }}</span>
+          <span class="sidebar-user__data">
+            <strong>{{ request.user.get_full_name|default:request.user.username }}</strong>
+            <small>{% if can_administer %}Administrador{% else %}Usuario{% endif %}</small>
+          </span>
+          <form action="{% url 'usuarios:logout' %}" method="post">
+            {% csrf_token %}
+            <button type="submit" title="Cerrar sesión" aria-label="Cerrar sesión">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M10 17l5-5-5-5M15 12H3M15 4h4a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-4" /></svg>
+            </button>
+          </form>
+        </div>
+      </aside>
+
+      <button class="sidebar-backdrop" type="button" data-sidebar-close aria-label="Cerrar menú"></button>
+
+      <div class="app-main">
+        <header class="app-topbar">
+          <div class="app-topbar__start">
+            <button class="sidebar-toggle" type="button" data-sidebar-toggle aria-controls="app-sidebar" aria-expanded="true" aria-label="Ocultar menú lateral" title="Mostrar u ocultar menú">
+              <svg class="sidebar-toggle__menu" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16" /></svg>
+              <svg class="sidebar-toggle__arrow" viewBox="0 0 24 24" aria-hidden="true"><path d="m15 18-6-6 6-6" /></svg>
+            </button>
+            <div>
+              <span class="app-topbar__eyebrow">Inventario 2026</span>
+              <strong>{% block page_name %}Panel principal{% endblock %}</strong>
+            </div>
+          </div>
+          <span class="app-topbar__status"><i></i> Sesión segura</span>
+        </header>
+
+        <main class="app-content">
+          {% if messages %}
+            <div class="shell-messages" aria-live="polite">
+              {% for message in messages %}
+                <p class="shell-message shell-message--{{ message.tags|default:'info' }}">{{ message }}</p>
+              {% endfor %}
+            </div>
+          {% endif %}
+          {% block page_content %}{% endblock %}
+        </main>
+      </div>
+    </div>
+  </body>
+</html>

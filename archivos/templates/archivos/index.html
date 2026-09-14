@@ -1,0 +1,89 @@
+{% extends "archivos/base.html" %}
+
+{% block title %}Líneas y sublíneas{% endblock %}
+
+{% block content %}
+  <div class="page-heading">
+    <div>
+      <p class="eyebrow">Archivos maestros</p>
+      <h1>Líneas y sublíneas</h1>
+      <p>Consulta la estructura comercial cargada en la plataforma.</p>
+    </div>
+    {% if can_administer %}
+      <a class="button button--primary" href="{% url 'archivos:upload' %}">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 16V4m0 0L7 9m5-5 5 5M5 15v4h14v-4" /></svg>
+        Cargar Excel
+      </a>
+    {% else %}
+      <button class="button button--primary" type="button" data-admin-permission-open>
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 16V4m0 0L7 9m5-5 5 5M5 15v4h14v-4" /></svg>
+        Cargar Excel
+      </button>
+    {% endif %}
+  </div>
+
+  <section class="summary" aria-label="Resumen de registros">
+    <article><span>Líneas registradas</span><strong>{{ total_lineas }}</strong></article>
+    <article><span>Sublíneas registradas</span><strong>{{ total_sublineas }}</strong></article>
+    <article><span>Relación</span><strong>1 : N</strong></article>
+  </section>
+
+  <form class="data-toolbar data-toolbar--catalog" method="get">
+    <label class="toolbar-field toolbar-field--search">
+      <span>Buscar en el catálogo</span>
+      <span class="toolbar-control">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7" /><path d="m16 16 4 4" /></svg>
+        <input name="q" type="search" value="{{ query }}" placeholder="Código, número o descripción" />
+      </span>
+    </label>
+    <button class="toolbar-submit" type="submit">Buscar</button>
+    {% if query %}<a class="toolbar-clear" href="{% url 'archivos:index' %}">Limpiar</a>{% endif %}
+  </form>
+
+  <section class="data-section hierarchy-section">
+    <div class="section-heading">
+      <div><span class="section-icon">L</span><div><h2>Catálogo por líneas</h2><p>Selecciona una línea para consultar sus sublíneas</p></div></div>
+      <span class="record-count">{{ lineas.paginator.count }} registros</span>
+    </div>
+    <div class="hierarchy-list">
+      {% for linea in lineas %}
+        <details class="line-group" {% if query %}open{% endif %}>
+          <summary>
+            <span class="line-number">{{ linea.nlinea }}</span>
+            <span class="line-description">
+              <strong>{{ linea.descripcion }}</strong>
+              <small>ID {{ linea.id_linea }}</small>
+            </span>
+            <span class="subline-count">{{ linea.total_sublineas }} sublínea{{ linea.total_sublineas|pluralize }}</span>
+            <svg class="chevron" viewBox="0 0 24 24" aria-hidden="true"><path d="m8 10 4 4 4-4" /></svg>
+          </summary>
+
+          <div class="subline-panel">
+            {% if linea.sublineas.all %}
+              <div class="table-wrap">
+                <table>
+                  <thead><tr><th>Número</th><th>ID sublínea</th><th>Descripción</th></tr></thead>
+                  <tbody>
+                    {% for sublinea in linea.sublineas.all %}
+                      <tr>
+                        <td><span class="subline-number">{{ sublinea.numero }}</span></td>
+                        <td><strong class="code">{{ sublinea.id_sublinea }}</strong></td>
+                        <td>{{ sublinea.descripcion }}</td>
+                      </tr>
+                    {% endfor %}
+                  </tbody>
+                </table>
+              </div>
+            {% else %}
+              <p class="empty">Esta línea todavía no tiene sublíneas cargadas.</p>
+            {% endif %}
+          </div>
+        </details>
+      {% empty %}
+        <div class="table-card"><p class="empty">No hay líneas para mostrar.</p></div>
+      {% endfor %}
+      {% include "archivos/pagination.html" with page=lineas page_param="lineas_page" %}
+    </div>
+  </section>
+  {% if not can_administer %}{% include "archivos/admin_permission_modal.html" %}{% endif %}
+{% endblock %}

@@ -1,0 +1,63 @@
+{% extends "layouts/app_shell.html" %}
+{% load static %}
+{% block title %}Avance general | Inventario 2026{% endblock %}
+{% block extra_css %}<link rel="stylesheet" href="{% static 'conteo/css/progress_general.css' %}?v=20260817-1" />{% endblock %}
+{% block page_name %}Conteo · Avance general{% endblock %}
+{% block page_content %}
+  <main class="general-progress-page">
+    <header class="general-progress-heading">
+      <div>
+        <p class="general-progress-eyebrow"><i aria-hidden="true"></i> Inventario 2026</p>
+        <h1>Avance general</h1>
+        <p>Reporte general de ubicaciones contadas</p>
+      </div>
+      <div class="general-progress-heading__status">
+        <span>Última actualización</span>
+        <strong>{% if current_load %}{{ current_load.fecha_carga|date:"d/m/Y · H:i" }}{% else %}Sin conteo cargado{% endif %}</strong>
+        <a href="{% url 'conteo:progress_general' %}" aria-label="Actualizar tablero">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 11a8 8 0 1 0-2.3 5.7M20 5v6h-6" /></svg>
+          Actualizar
+        </a>
+      </div>
+    </header>
+
+    <section class="general-warehouse-grid" aria-label="Avance por bodega">
+      {% for warehouse in warehouse_cards %}
+        <article class="general-warehouse-card">
+          <header class="general-warehouse-card__header">
+            <div>
+              <span class="general-warehouse-card__number">0{{ forloop.counter }}</span>
+              <p>Bodega</p>
+              <h2>{{ warehouse.name }}</h2>
+            </div>
+            <div class="general-warehouse-card__score">
+              <span>Avance total</span>
+              <strong>{{ warehouse.percentage }}<small>%</small></strong>
+            </div>
+          </header>
+
+          <div class="general-progress-track" role="progressbar" aria-label="Avance de {{ warehouse.name }}" aria-valuenow="{{ warehouse.percentage }}" aria-valuemin="0" aria-valuemax="100">
+            <i style="width: {{ warehouse.percentage }}%"></i>
+          </div>
+          <p class="general-warehouse-card__summary"><strong>{{ warehouse.counted }}</strong> ubicaciones contadas <span></span> <b>{{ warehouse.pending }}</b> pendientes</p>
+
+          <div class="general-type-grid">
+            {% for item in warehouse.types %}
+              <section class="general-type-card">
+                <header><span>{{ item.name }}</span><strong>{{ item.percentage }}<small>%</small></strong></header>
+                <div class="general-type-track" role="progressbar" aria-label="{{ item.name }} en {{ warehouse.name }}" aria-valuenow="{{ item.percentage }}" aria-valuemin="0" aria-valuemax="100"><i style="width: {{ item.percentage }}%"></i></div>
+                <footer><span>{{ item.counted }} de {{ item.expected }} contadas</span><b>{{ item.pending }} pendientes</b></footer>
+              </section>
+            {% endfor %}
+          </div>
+        </article>
+      {% empty %}
+        <div class="general-progress-empty"><strong>Sin datos de avance</strong><p>Carga el mapa, el RGE y el conteo para visualizar el tablero.</p></div>
+      {% endfor %}
+    </section>
+
+    {% if map_only_total or rge_only_total %}
+      <p class="general-progress-note">{{ map_only_total|add:rge_only_total }} ubicaciones están pendientes de conciliación entre el mapa y el RGE y no se incluyen en estos porcentajes.</p>
+    {% endif %}
+  </main>
+{% endblock %}

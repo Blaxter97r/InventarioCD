@@ -1,0 +1,86 @@
+{% extends "conteo/base.html" %}
+{% load static %}
+
+{% block title %}Cargar diferencias | Inventario 2026{% endblock %}
+
+{% block content %}
+  <a class="count-back" href="{% url 'conteo:differences_index' %}">← Volver a diferencias</a>
+  <div class="difference-upload-layout">
+    <section class="difference-upload-card">
+      <div class="upload-title">
+        <span class="upload-title__icon"><svg viewBox="0 0 24 24"><path d="M12 16V4m0 0L7 9m5-5 5 5M5 15v4h14v-4" /></svg></span>
+        <div><p class="count-eyebrow">Nueva carga</p><h1>Diferencias por línea</h1></div>
+      </div>
+      <p class="upload-intro">Selecciona la línea de producto, adjunta el Excel de diferencias y, si lo tienes, el PDF de AS400.</p>
+
+      <form id="differences-upload-form" class="difference-upload-form" method="post" enctype="multipart/form-data" novalidate>
+        {% csrf_token %}
+        <label class="upload-field">
+          <span><b>1</b> Línea de producto</span>
+          {{ form.linea }}
+          {% for error in form.linea.errors %}<small class="upload-error">{{ error }}</small>{% endfor %}
+        </label>
+        <label class="upload-file-zone {% if form.archivo.errors %}has-error{% endif %}" for="{{ form.archivo.id_for_label }}">
+          <span class="upload-file-zone__step">2</span>
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h6l2 2h8v12H4z" /><path d="M12 17v-6m0 0-3 3m3-3 3 3" /></svg>
+          <strong>Selecciona el archivo de diferencias</strong>
+          <small>Libro Excel .xlsx · máximo 10 MB</small>
+          {{ form.archivo }}
+        </label>
+        {% for error in form.archivo.errors %}<p class="upload-error">{{ error }}</p>{% endfor %}
+        <label class="upload-file-zone upload-file-zone--secondary {% if form.archivo_as400.errors %}has-error{% endif %}" for="{{ form.archivo_as400.id_for_label }}">
+          <span class="upload-file-zone__step">3</span>
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 3h7l4 4v14H7z" /><path d="M14 3v5h4M10 13h5m-5 3h5" /></svg>
+          <strong>AS400 - Diferencias (PDF)</strong>
+          <small>Opcional · PDF de hasta 20 MB · se añadirá a los reportes de ambas bodegas</small>
+          {{ form.archivo_as400 }}
+        </label>
+        {% for error in form.archivo_as400.errors %}<p class="upload-error">{{ error }}</p>{% endfor %}
+        {% for error in form.non_field_errors %}<p class="upload-error">{{ error }}</p>{% endfor %}
+        <button class="count-button count-button--primary upload-continue" type="button" data-differences-confirm-open>
+          Continuar y revisar
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14M14 7l5 5-5 5" /></svg>
+        </button>
+      </form>
+    </section>
+
+    <aside class="difference-format-card">
+      <p class="count-eyebrow">Formato esperado</p>
+      <h2>Columnas que serán almacenadas</h2>
+      <p>La plataforma ignorará cualquier columna adicional y conservará únicamente estas:</p>
+      <div class="column-chips">
+        <span>linea</span><span>sublinea</span><span>codigo</span><span>ultimo conteo</span><span>existencia</span><span>Diferencia</span><span>Ubicación 1</span><span>Ubicación 2</span><span>Ubicación 3</span><span>Ubicación 4</span><span>Fecha Geracion</span><span>Hora Generación</span>
+      </div>
+      <ul>
+        <li>Todas las filas deben corresponder a la línea seleccionada.</li>
+        <li>Las cuatro ubicaciones pueden quedar vacías.</li>
+        <li>La carga se guarda como un nuevo registro histórico.</li>
+      </ul>
+      <a class="format-download" href="{% url 'conteo:differences_template' %}">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4v12m0 0 5-5m-5 5-5-5M5 20h14" /></svg>
+        Descargar plantilla
+      </a>
+    </aside>
+  </div>
+
+  <dialog class="upload-confirm-modal" data-differences-confirm-modal aria-labelledby="upload-confirm-title">
+    <div class="upload-confirm-modal__body">
+      <button class="upload-confirm-modal__close" type="button" data-differences-confirm-close aria-label="Cerrar"><svg viewBox="0 0 24 24"><path d="m6 6 12 12M18 6 6 18" /></svg></button>
+      <span class="upload-confirm-modal__icon"><svg viewBox="0 0 24 24"><path d="M4 5h6l2 2h8v12H4z" /><path d="m9 14 2 2 4-5" /></svg></span>
+      <p class="count-eyebrow">Confirmar carga</p>
+      <h2 id="upload-confirm-title">¿Todo está correcto?</h2>
+      <p>Vas a procesar los siguientes archivos:</p>
+      <dl>
+        <div><dt>Archivo</dt><dd data-confirm-file>—</dd></div>
+        <div><dt>PDF AS400</dt><dd data-confirm-as400>Sin adjuntar</dd></div>
+        <div><dt>Línea</dt><dd data-confirm-line>—</dd></div>
+      </dl>
+      <p class="confirm-warning">El contenido será validado antes de guardarse en la base de datos.</p>
+      <div class="upload-confirm-modal__actions">
+        <button type="button" data-differences-confirm-close>Regresar</button>
+        <button class="is-primary" type="button" data-differences-submit>Confirmar carga</button>
+      </div>
+    </div>
+  </dialog>
+  <script src="{% static 'conteo/js/differences_upload.js' %}?v=20260808-1" defer></script>
+{% endblock %}

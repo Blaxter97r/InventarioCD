@@ -1,0 +1,41 @@
+{% extends "archivos/base.html" %}
+{% load l10n %}
+
+{% block title %}Base de costo | Inventario 2026{% endblock %}
+
+{% block content %}
+  <div class="page-heading">
+    <div><p class="eyebrow">Archivos maestros</p><h1>Base de costo</h1><p>Costo vigente de cada producto, vinculado por código.</p></div>
+    {% if can_administer %}
+      <a class="button button--primary" href="{% url 'archivos:cost_base_upload' %}"><svg viewBox="0 0 24 24"><path d="M12 16V4m0 0L7 9m5-5 5 5M5 15v4h14v-4" /></svg>{% if current_load %}Sustituir base{% else %}Cargar base{% endif %}</a>
+    {% else %}
+      <button class="button button--primary" type="button" data-admin-permission-open><svg viewBox="0 0 24 24"><path d="M12 16V4m0 0L7 9m5-5 5 5M5 15v4h14v-4" /></svg>Cargar base</button>
+    {% endif %}
+  </div>
+
+  <section class="summary" aria-label="Resumen de la base de costo">
+    <article><span>Códigos vigentes</span><strong>{% if current_load %}{{ current_load.total_registros }}{% else %}0{% endif %}</strong></article>
+    <article><span>Fuente del costo</span><strong>MCOSUC</strong></article>
+    <article><span>Bases activas</span><strong>{% if current_load %}1{% else %}0{% endif %}</strong></article>
+  </section>
+
+  {% if current_load %}
+    <section class="inventory-load-info"><div><span>Base vigente</span><strong>{{ current_load.archivo_nombre }}</strong></div><div><span>Actualizada</span><strong>{{ current_load.fecha_carga|date:"d/m/Y H:i" }}</strong></div><div><span>Usuario</span><strong>{{ current_load.cargado_por.username }}</strong></div></section>
+    <form class="data-toolbar data-toolbar--catalog" method="get">
+      <label class="toolbar-field toolbar-field--search"><span>Buscar producto</span><span class="toolbar-control"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7" /><path d="m16 16 4 4" /></svg><input name="q" value="{{ query }}" placeholder="Código" /></span></label>
+      <button class="toolbar-submit" type="submit">Buscar</button>
+      {% if query %}<a class="toolbar-clear" href="{% url 'archivos:cost_base_index' %}">Limpiar</a>{% endif %}
+    </form>
+  {% endif %}
+
+  <section class="data-section">
+    <div class="section-heading"><div><span class="section-icon">$</span><div><h2>Costos vigentes</h2><p>Código enlazable y costo tomado de MCOSUC</p></div></div><span class="record-count">{{ costs.paginator.count }} registros encontrados</span></div>
+    <div class="table-card"><div class="table-wrap"><table>
+      <thead><tr><th>Código</th><th>Costo MCOSUC</th></tr></thead>
+      <tbody>{% for item in costs %}<tr><td><strong class="code">{{ item.codigo }}</strong></td><td>{{ item.costo|unlocalize }}</td></tr>{% empty %}<tr><td class="empty" colspan="2">{% if current_load %}No hay coincidencias para mostrar.{% else %}Aún no se ha cargado una base de costo.{% endif %}</td></tr>{% endfor %}</tbody>
+    </table></div>
+    {% if costs.paginator.num_pages > 1 %}<nav class="pagination"><a {% if costs.has_previous %}href="?q={{ query|urlencode }}&page={{ costs.previous_page_number }}"{% endif %}>{% if costs.has_previous %}← Anterior{% endif %}</a><span>Página {{ costs.number }} de {{ costs.paginator.num_pages }}</span><a {% if costs.has_next %}href="?q={{ query|urlencode }}&page={{ costs.next_page_number }}"{% endif %}>{% if costs.has_next %}Siguiente →{% endif %}</a></nav>{% endif %}
+    </div>
+  </section>
+  {% if not can_administer %}{% include "archivos/admin_permission_modal.html" %}{% endif %}
+{% endblock %}
