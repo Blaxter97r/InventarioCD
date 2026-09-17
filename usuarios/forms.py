@@ -7,6 +7,7 @@ from django.contrib.auth.models import Group
 ROLE_CHOICES = (
     ("Supervisores", "Supervisor"),
     ("Gerente", "Gerente"),
+    ("Editores", "Editor"),
 )
 
 

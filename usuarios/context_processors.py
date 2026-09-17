@@ -3,8 +3,12 @@ def navigation_permissions(request):
     can_administer = user.is_authenticated and (
         user.is_superuser or user.groups.filter(name="Admin").exists()
     )
+    is_editor = user.is_authenticated and user.groups.filter(name="Editores").exists()
     can_validate_differences = user.is_authenticated and (
         can_administer or user.groups.filter(name="Gerente").exists()
+    )
+    can_upload_differences = user.is_authenticated and (
+        can_administer or user.groups.filter(name="Supervisores").exists()
     )
     pending_recounts = 0
     selected_recount_lines = 0
@@ -30,6 +34,8 @@ def navigation_permissions(request):
         )
     return {
         "can_administer": can_administer,
+        "is_editor": is_editor,
+        "can_upload_differences": can_upload_differences,
         "can_validate_differences": can_validate_differences,
         "pending_recounts": pending_recounts,
         "selected_recount_lines": selected_recount_lines,

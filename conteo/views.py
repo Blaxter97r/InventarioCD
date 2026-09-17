@@ -39,6 +39,20 @@ def admin_required(view):
     return wrapped
 
 
+def differences_uploader_required(view):
+    @login_required
+    @wraps(view)
+    def wrapped(request, *args, **kwargs):
+        if not (
+            request.user.is_superuser
+            or request.user.groups.filter(name__in=("Admin", "Supervisores")).exists()
+        ):
+            raise PermissionDenied
+        return view(request, *args, **kwargs)
+
+    return wrapped
+
+
 def manager_required(view):
     @login_required
     @wraps(view)
@@ -78,7 +92,7 @@ def differences_index_view(request):
     return render(request, "conteo/differences_index.html", context)
 
 
-@admin_required
+@differences_uploader_required
 def differences_upload_view(request):
     form = DiferenciasUploadForm(request.POST or None, request.FILES or None)
     if request.method == "POST" and form.is_valid():
@@ -102,7 +116,7 @@ def differences_upload_view(request):
     return render(request, "conteo/differences_upload.html", {"form": form})
 
 
-@admin_required
+@differences_uploader_required
 def differences_template_view(request):
     workbook = Workbook()
     sheet = workbook.active

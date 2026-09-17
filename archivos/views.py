@@ -8,7 +8,7 @@ from django.contrib.auth.decorators import login_required
 from django.core.exceptions import PermissionDenied
 from django.core.paginator import Paginator
 from django.db import transaction
-from django.db.models import Count, IntegerField, Prefetch, Q
+from django.db.models import Count, IntegerField, OuterRef, Prefetch, Q, Subquery
 from django.db.models.functions import Cast, Lower
 from django.http import Http404, HttpResponse
 from django.shortcuts import get_object_or_404, redirect, render
@@ -17,7 +17,7 @@ from django.utils.http import url_has_allowed_host_and_scheme
 from openpyxl import Workbook
 from openpyxl.styles import Alignment, Font, PatternFill
 
-from .forms import BECountUploadForm, CostBaseUploadForm, ExcelUploadForm, InventoryCountQuantityForm, InventoryCountUploadForm, RGEUploadForm
+from .forms import BECountUploadForm, CostBaseUploadForm, ExcelUploadForm, InventoryCountLocationForm, InventoryCountQuantityForm, InventoryCountUploadForm, RGEUploadForm
 from .models import (
     AjusteCantidadConteoInventario,
     CargaBaseCosto,
@@ -260,13 +260,19 @@ def inventory_count_index_view(request):
         current_load = latest_load
     details = DetalleConteoInventario.objects.none()
     warehouses = []
-    total_codes = 0
-    total_warehouses = 0
+    new_location_code = ""
     if current_load:
-        details = current_load.detalles.all()
+        latest_adjustment = (
+            AjusteCantidadConteoInventario.objects.filter(detalle_id=OuterRef("pk"))
+            .order_by("-fecha", "-pk")
+        )
+        details = current_load.detalles.annotate(
+            last_modified_by=Subquery(
+                latest_adjustment.values("modificado_por__username")[:1]
+            ),
+            last_modified_at=Subquery(latest_adjustment.values("fecha")[:1]),
+        )
         warehouses = details.order_by("bodega").values_list("bodega", flat=True).distinct()
-        total_codes = current_load.total_codigos
-        total_warehouses = current_load.total_bodegas
         if query:
             details = details.filter(
                 Q(codigo__icontains=query)
@@ -275,6 +281,14 @@ def inventory_count_index_view(request):
             )
         if selected_warehouse:
             details = details.filter(bodega=selected_warehouse)
+        if request.GET.get("editar") == "1" and query:
+            new_location_code = (
+                current_load.detalles.filter(codigo__iexact=query)
+                .order_by("pk")
+                .values_list("codigo", flat=True)
+                .first()
+                or ""
+            )
 
     can_edit_count = bool(
         current_load
@@ -292,13 +306,101 @@ def inventory_count_index_view(request):
             "current_load": current_load,
             "can_edit_count": can_edit_count,
             "edit_mode": can_edit_count and request.GET.get("editar") == "1",
+            "new_location_code": new_location_code,
             "details": Paginator(details, 50).get_page(request.GET.get("page")),
             "warehouses": warehouses,
-            "total_codes": total_codes,
-            "total_warehouses": total_warehouses,
             "load_history": Paginator(loads, 10).get_page(request.GET.get("cargas_page")),
         },
     )
+
+
+@login_required
+def inventory_count_location_view(request):
+    if request.method != "POST":
+        raise Http404
+
+    index_url = reverse("archivos:inventory_count_index")
+    return_to = request.POST.get("return_to", "")
+    if not (
+        url_has_allowed_host_and_scheme(return_to, allowed_hosts={request.get_host()})
+        and urlsplit(return_to).path == index_url
+    ):
+        return_to = index_url
+
+    form = InventoryCountLocationForm(request.POST)
+    if not form.is_valid():
+        errors = " ".join(
+            str(error)
+            for field_errors in form.errors.values()
+            for error in field_errors
+        )
+        messages.error(request, "No se agregó la ubicación. " + errors)
+        return redirect(return_to)
+
+    try:
+        submitted_load_id = int(request.POST.get("carga_id", ""))
+    except ValueError:
+        raise Http404
+
+    with transaction.atomic():
+        latest_load = CargaConteoInventario.objects.select_for_update().first()
+        if not latest_load or submitted_load_id != latest_load.pk:
+            raise PermissionDenied("Solo se puede modificar el conteo vigente.")
+
+        code = form.cleaned_data["codigo"]
+        existing_code = (
+            latest_load.detalles.filter(codigo__iexact=code)
+            .order_by("pk")
+            .values_list("codigo", flat=True)
+            .first()
+        )
+        if not existing_code:
+            messages.error(
+                request,
+                f"No se agregó la ubicación. El código {code} no pertenece al conteo vigente.",
+            )
+            return redirect(return_to)
+
+        warehouse = form.cleaned_data["bodega"]
+        location = form.cleaned_data["ubicacion"]
+        duplicate = latest_load.detalles.filter(
+            codigo__iexact=existing_code,
+            bodega__iexact=warehouse,
+            ubicacion__iexact=location,
+        ).exists()
+        if duplicate:
+            messages.error(
+                request,
+                f"No se agregó la ubicación. {existing_code} ya existe en {warehouse} / {location}.",
+            )
+            return redirect(return_to)
+
+        quantity = form.cleaned_data["cantidad"]
+        detail = DetalleConteoInventario.objects.create(
+            carga=latest_load,
+            codigo=existing_code,
+            bodega=warehouse,
+            ubicacion=location,
+            cantidad=quantity,
+        )
+        AjusteCantidadConteoInventario.objects.create(
+            detalle=detail,
+            cantidad_anterior=0,
+            cantidad_nueva=quantity,
+            modificado_por=request.user,
+        )
+        latest_load.total_registros = latest_load.detalles.count()
+        latest_load.total_codigos = latest_load.detalles.values("codigo").distinct().count()
+        latest_load.total_bodegas = latest_load.detalles.values("bodega").distinct().count()
+        latest_load.save(
+            update_fields=("total_registros", "total_codigos", "total_bodegas")
+        )
+
+    messages.success(
+        request,
+        f"Se agregó {existing_code} en {warehouse} / {location} con cantidad {quantity}.",
+    )
+    return redirect(return_to)
 
 
 @login_required

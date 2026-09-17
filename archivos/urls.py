@@ -14,6 +14,7 @@ urlpatterns = [
     path("ubicaciones/plantilla/", views.location_template_view, name="location_template"),
     path("conteo-inventario/", views.inventory_count_index_view, name="inventory_count_index"),
     path("conteo-inventario/detalle/<int:pk>/cantidad/", views.inventory_count_quantity_view, name="inventory_count_quantity"),
+    path("conteo-inventario/ubicacion/agregar/", views.inventory_count_location_view, name="inventory_count_location"),
     path("conteo-inventario/cantidades/guardar/", views.inventory_count_bulk_quantity_view, name="inventory_count_bulk_quantity"),
     path("conteo-inventario/cargar/", views.inventory_count_upload_view, name="inventory_count_upload"),
     path("conteo-inventario/<int:pk>/eliminar/", views.inventory_count_delete_view, name="inventory_count_delete"),

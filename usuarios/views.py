@@ -16,6 +16,10 @@ def _is_admin(user):
     )
 
 
+def _is_editor(user):
+    return user.is_authenticated and user.groups.filter(name="Editores").exists()
+
+
 def _require_admin(request):
     if not _is_admin(request.user):
         raise PermissionDenied
@@ -24,6 +28,8 @@ def _require_admin(request):
 def login_view(request):
     """Muestra el formulario e inicia sesión con usuario o correo."""
     if request.user.is_authenticated:
+        if _is_editor(request.user):
+            return redirect("archivos:inventory_count_index")
         return redirect("usuarios:inicio")
 
     next_url = request.GET.get("next") or request.POST.get("next", "")
@@ -44,6 +50,9 @@ def login_view(request):
         if user is not None and user.is_active:
             login(request, user)
             request.session.set_expiry(1209600 if request.POST.get("remember") else 0)
+
+            if _is_editor(user):
+                return redirect("archivos:inventory_count_index")
 
             if next_url and url_has_allowed_host_and_scheme(
                 next_url,

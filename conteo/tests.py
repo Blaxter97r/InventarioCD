@@ -29,7 +29,12 @@ from archivos.models import (
 )
 
 from .models import CargaDiferencias, Diferencia, InicioReconteoBodega
-from .recount_reports import _product_rows, _warehouse_summary_rows
+from .recount_reports import (
+    EXTRA_LOCATION_ROWS,
+    _combined_inventory_table,
+    _product_rows,
+    _report_styles,
+)
 
 
 TEST_MEDIA_ROOT = tempfile.mkdtemp(prefix="inventario-conteo-tests-")
@@ -99,7 +104,8 @@ class DifferenceAccessTests(TestCase):
         response = self.client.get(reverse("conteo:differences_index"))
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, "Diferencias por línea")
-        self.assertContains(response, "Permiso de administrador")
+        self.assertContains(response, reverse("conteo:differences_upload"))
+        self.assertNotContains(response, "Permiso de administrador")
 
     def test_authenticated_user_can_view_progress(self):
         self.client.force_login(self.user)
@@ -325,8 +331,26 @@ class DifferenceAccessTests(TestCase):
         self.assertContains(response, "Primario")
         self.assertContains(response, "Secundario")
 
-    def test_non_admin_cannot_open_upload(self):
+    def test_supervisor_can_open_upload_and_download_template(self):
         self.client.force_login(self.user)
+        index = self.client.get(reverse("conteo:differences_index"))
+        self.assertContains(index, reverse("conteo:differences_upload"))
+        self.assertNotContains(index, "data-admin-permission-open")
+        self.assertEqual(self.client.get(reverse("conteo:differences_upload")).status_code, 200)
+        self.assertEqual(self.client.get(reverse("conteo:differences_template")).status_code, 200)
+
+        workbook = make_difference_workbook([
+            ("1", "2", "ABC-001", 10, 8, -2, "A-01", "", "", "", date(2026, 8, 8), time(14, 30)),
+        ])
+        response = self.client.post(
+            reverse("conteo:differences_upload"),
+            {"linea": self.line.pk, "archivo": workbook},
+        )
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(CargaDiferencias.objects.get().cargado_por, self.user)
+
+    def test_manager_cannot_open_upload(self):
+        self.client.force_login(self.manager)
         self.assertEqual(self.client.get(reverse("conteo:differences_upload")).status_code, 403)
         self.assertEqual(self.client.get(reverse("conteo:differences_template")).status_code, 403)
 
@@ -486,7 +510,7 @@ class DifferenceImportTests(TestCase):
             )
             self.assertEqual(report.status_code, 200)
             pages = PdfReader(BytesIO(report.content)).pages
-            self.assertGreaterEqual(len(pages), 3)
+            self.assertGreaterEqual(len(pages), 2)
             self.assertIn("AS400 DIFERENCIAS PRUEBA", pages[-1].extract_text())
 
     def test_invalid_as400_pdf_is_rejected_before_saving(self):
@@ -503,7 +527,7 @@ class DifferenceImportTests(TestCase):
         self.assertContains(response, "El archivo AS400 no es un PDF válido.")
         self.assertFalse(CargaDiferencias.objects.exists())
 
-    def test_pdf_summarizes_selected_codes_across_be_and_inventory_warehouses(self):
+    def test_pdf_groups_rge_counted_and_external_rows_by_selected_code(self):
         load = CargaDiferencias.objects.create(
             linea=self.line,
             archivo_nombre="diferencias.xlsx",
@@ -515,7 +539,10 @@ class DifferenceImportTests(TestCase):
         for code, selected in (("ABC-001", True), ("SIN-BE", True), ("NO-ELEGIDO", False)):
             Diferencia.objects.create(
                 carga=load,
+                sublinea="1",
+                item="66",
                 codigo=code,
+                descripcion="Filtro de aceite",
                 ultimo_conteo=0,
                 existencia=1,
                 diferencia=1,
@@ -536,6 +563,18 @@ class DifferenceImportTests(TestCase):
         count_load = CargaConteoInventario.objects.create(
             archivo_nombre="conteo.xlsx", cargado_por=self.admin
         )
+        for location, location_type in (
+            ("C-01", "Primario"),
+            ("C-02", "Secundario"),
+            ("C-03", "Secundario"),
+            ("C-04", "Secundario"),
+        ):
+            Ubicacion.objects.create(
+                ubicacion=location,
+                bodega="CENTRAL",
+                sector="Piso",
+                tipo=location_type,
+            )
         for warehouse, location, quantity in (
             ("BODEGA CENTRAL", "C-01", 4),
             ("Central", "C-02", 2),
@@ -550,23 +589,70 @@ class DifferenceImportTests(TestCase):
             carga=count_load, bodega="CENTRAL", ubicacion="C-03",
             codigo="SIN-BE", cantidad=Decimal("2"),
         )
+        rge_load = CargaRGE.objects.create(
+            archivo_nombre="rge.xlsx", cargado_por=self.admin
+        )
+        DetalleRGE.objects.create(
+            carga=rge_load, codigo="ABC-001", ubicacion="C-01", cantidad=Decimal("10")
+        )
+        DetalleRGE.objects.create(
+            carga=rge_load, codigo="ABC-001", ubicacion="C-04", cantidad=Decimal("8")
+        )
 
+        rows = _product_rows(load, "central")
+        abc_row = next(row for row in rows if row["base"][3] == "ABC-001")
         self.assertEqual(
-            _warehouse_summary_rows(load),
+            abc_row["locations"],
             [
-                ["ABC-001", Decimal("3"), Decimal("4"), Decimal("5"),
-                 Decimal("6"), Decimal("3"), Decimal("7"), Decimal("28")],
-                ["SIN-BE", Decimal("0"), Decimal("0"), Decimal("0"),
-                 Decimal("2"), Decimal("0"), Decimal("0"), Decimal("2")],
+                {
+                    "warehouse": "CENTRAL", "type": "PRIMARIO", "location": "C-01",
+                    "rge_quantity": Decimal("10"), "counted_quantity": Decimal("4"),
+                },
+                {
+                    "warehouse": "CENTRAL", "type": "SECUNDARIO", "location": "C-02",
+                    "rge_quantity": None, "counted_quantity": Decimal("2"),
+                },
+                {
+                    "warehouse": "CENTRAL", "type": "SECUNDARIO", "location": "C-04",
+                    "rge_quantity": Decimal("8"), "counted_quantity": None,
+                },
+                {
+                    "warehouse": "RANSA", "type": "—", "location": "R-01",
+                    "rge_quantity": None, "counted_quantity": Decimal("3"),
+                },
             ],
+        )
+        self.assertEqual(abc_row["last_count"], Decimal("0"))
+        self.assertEqual(abc_row["stock"], Decimal("1"))
+        self.assertEqual(abc_row["calculated_difference"], Decimal("-1"))
+        self.assertEqual(
+            [(row["warehouse"], row["counted_quantity"]) for row in abc_row["external"]],
+            [("LOURDES", Decimal("4")), ("MIRAMAR", Decimal("5")), ("AGDOSA", Decimal("3"))],
+        )
+        sin_be_row = next(row for row in rows if row["base"][3] == "SIN-BE")
+        self.assertEqual(sin_be_row["external"], [])
+        table = _combined_inventory_table(rows, _report_styles())
+        self.assertEqual(EXTRA_LOCATION_ROWS, 3)
+        self.assertEqual(table._cellvalues[0][-1].getPlainText(), "Firma auditor")
+        first_product_rows = table._cellvalues[3:13]
+        self.assertEqual(
+            [row[5].getPlainText() for row in first_product_rows[-6:]],
+            ["LOURDES", "MIRAMAR", "AGDOSA", "", "", ""],
         )
         response = self.client.get(
             reverse("conteo:recount_warehouse_report", args=[load.pk, "central"])
         )
         self.assertEqual(response.status_code, 200)
         pdf_text = "\n".join(page.extract_text() for page in PdfReader(BytesIO(response.content)).pages)
-        for label in ("RESUMEN DE CANTIDADES CONTADAS POR BODEGA", "AGDOSA", "Lourdes", "Miramar", "RANSA", "Pedregal", "ABC-001", "SIN-BE"):
+        for label in ("Tipo ubicación", "RGE", "Contado", "Firma auditor", "Último conteo", "Existencia", "Diferencia", "AGDOSA", "LOURDES", "MIRAMAR", "ABC-001", "SIN-BE", "C-04"):
             self.assertIn(label, pdf_text)
+        self.assertEqual(pdf_text.count("Último conteo"), 2)
+        self.assertEqual(pdf_text.count("Existencia"), 2)
+        self.assertEqual(pdf_text.count("Diferencia"), 2)
+        self.assertNotIn("RESUMEN DE CANTIDADES CONTADAS POR BODEGA", pdf_text)
+        self.assertNotIn("FORMATO DE RECONTEO DE INVENTARIO", pdf_text)
+        self.assertNotIn("CANTIDADES POR UBICACIÓN Y BODEGA", pdf_text)
+        self.assertNotIn("PEDREGAL", pdf_text)
         self.assertNotIn("NO-ELEGIDO", pdf_text)
 
     def test_recount_warehouse_buttons_and_report_use_count_warehouse(self):
@@ -698,10 +784,12 @@ class DifferenceImportTests(TestCase):
         self.assertIn(".pdf", response["Content-Disposition"])
         self.assertTrue(response.content.startswith(b"%PDF-"))
         self.assertGreater(len(response.content), 1000)
-        self.assertGreaterEqual(response.content.count(b"/Type /Page"), 3)
+        self.assertGreaterEqual(len(PdfReader(BytesIO(response.content)).pages), 1)
         pdf_text = "\n".join(page.extract_text() for page in PdfReader(BytesIO(response.content)).pages)
-        self.assertIn("RESUMEN DE CANTIDADES CONTADAS POR BODEGA", pdf_text)
-        self.assertIn("Conteo BE pendiente de carga", pdf_text)
+        self.assertNotIn("FORMATO DE RECONTEO DE INVENTARIO", pdf_text)
+        self.assertNotIn("CANTIDADES POR UBICACIÓN Y BODEGA", pdf_text)
+        self.assertNotIn("RESUMEN DE CANTIDADES CONTADAS POR BODEGA", pdf_text)
+        self.assertNotIn("Conteo BE pendiente de carga", pdf_text)
 
     def test_recount_start_is_manual_and_independent_by_warehouse(self):
         load = CargaDiferencias.objects.create(
@@ -811,7 +899,7 @@ class DifferenceImportTests(TestCase):
         self.assertEqual(summary.context["status_counts"]["RECONTEO_TERMINADO"], 1)
         self.assertNotContains(self.client.get(reverse("conteo:recounts")), "Falta finalizar RANSA")
 
-    def test_uncounted_selected_code_uses_rge_warehouse_and_zero_quantity(self):
+    def test_shared_code_appears_in_each_warehouse_and_unique_code_only_in_its_warehouse(self):
         load = CargaDiferencias.objects.create(
             linea=self.line,
             archivo_nombre="linea_1.xlsx",
@@ -821,7 +909,7 @@ class DifferenceImportTests(TestCase):
             cargado_por=self.admin,
             seleccionado_por=self.admin,
         )
-        for code in ("CONTADO", "SIN-CONTEO"):
+        for code in ("CONTADO", "SIN-CONTEO", "SOLO-CENTRAL"):
             Diferencia.objects.create(
                 carga=load,
                 sublinea="2",
@@ -839,11 +927,14 @@ class DifferenceImportTests(TestCase):
         Ubicacion.objects.create(
             ubicacion="R-01", bodega="RANSA", sector="Piso", tipo="Primario"
         )
+        Ubicacion.objects.create(
+            ubicacion="R-02", bodega="RANSA", sector="Piso", tipo="Secundario"
+        )
         count_load = CargaConteoInventario.objects.create(
             archivo_nombre="conteo.xlsx",
-            total_registros=1,
-            total_codigos=1,
-            total_bodegas=1,
+            total_registros=3,
+            total_codigos=2,
+            total_bodegas=2,
             cargado_por=self.admin,
         )
         DetalleConteoInventario.objects.create(
@@ -852,6 +943,20 @@ class DifferenceImportTests(TestCase):
             ubicacion="C-01",
             codigo="CONTADO",
             cantidad=Decimal("3"),
+        )
+        DetalleConteoInventario.objects.create(
+            carga=count_load,
+            bodega="CENTRAL",
+            ubicacion="C-01",
+            codigo="SOLO-CENTRAL",
+            cantidad=Decimal("2"),
+        )
+        DetalleConteoInventario.objects.create(
+            carga=count_load,
+            bodega="RANSA",
+            ubicacion="R-02",
+            codigo="CONTADO",
+            cantidad=Decimal("7"),
         )
         rge_load = CargaRGE.objects.create(
             archivo_nombre="rge.xlsx",
@@ -874,24 +979,56 @@ class DifferenceImportTests(TestCase):
             option["key"]: option["count"]
             for option in page.context["recounts"][0].warehouse_options
         }
-        self.assertEqual(warehouse_counts, {"central": 2, "ransa": 1})
+        self.assertEqual(warehouse_counts, {"central": 3, "ransa": 2})
         self.assertEqual(
             [(row["base"][3], row["scanned"]) for row in _product_rows(load, "central")],
             [
                 ("CONTADO", [("C-01", Decimal("3"))]),
                 ("SIN-CONTEO", [("C-01", Decimal("0"))]),
+                ("SOLO-CENTRAL", [("C-01", Decimal("2"))]),
             ],
         )
         self.assertEqual(
             [(row["base"][3], row["scanned"]) for row in _product_rows(load, "ransa")],
-            [("SIN-CONTEO", [("R-01", Decimal("0"))])],
+            [
+                ("CONTADO", [("R-02", Decimal("7"))]),
+                ("SIN-CONTEO", [("R-01", Decimal("0"))]),
+            ],
         )
+        for report_warehouse in ("central", "ransa"):
+            shared_row = next(
+                row for row in _product_rows(load, report_warehouse)
+                if row["base"][3] == "CONTADO"
+            )
+            locations = {
+                (row["warehouse"], row["location"]): row
+                for row in shared_row["locations"]
+            }
+            self.assertEqual(
+                locations[("CENTRAL", "C-01")]["counted_quantity"], Decimal("3")
+            )
+            self.assertEqual(
+                locations[("RANSA", "R-02")]["counted_quantity"], Decimal("7")
+            )
+            self.assertEqual(
+                locations[("RANSA", "R-01")]["rge_quantity"], Decimal("9")
+            )
         for warehouse in ("central", "ransa"):
             response = self.client.get(
                 reverse("conteo:recount_warehouse_report", args=[load.pk, warehouse])
             )
             self.assertEqual(response.status_code, 200)
             self.assertTrue(response.content.startswith(b"%PDF-"))
+            pdf_text = "\n".join(
+                page.extract_text() for page in PdfReader(BytesIO(response.content)).pages
+            )
+            self.assertIn("CONTADO", pdf_text)
+            self.assertIn("C-01", pdf_text)
+            self.assertIn("R-02", pdf_text)
+            if warehouse == "central":
+                self.assertIn("SOLO-CENTRAL", pdf_text)
+            else:
+                self.assertNotIn("SOLO-CENTRAL", pdf_text)
 
     def test_selected_code_without_source_warehouse_is_visible_for_review(self):
         load = CargaDiferencias.objects.create(

@@ -509,14 +509,14 @@ class InventoryCountQuantityEditTests(TestCase):
         self.assertTrue(page.context["can_edit_count"])
         self.assertContains(page, "Editar cantidades")
 
-        response = self.post_quantity("7,25")
+        response = self.post_quantity("7")
         self.assertRedirects(response, reverse("archivos:inventory_count_index") + "?q=ABC-001")
         self.detail.refresh_from_db()
-        self.assertEqual(self.detail.cantidad, Decimal("7.25"))
+        self.assertEqual(self.detail.cantidad, Decimal("7"))
         grouped, _ = _group_scanned_locations({"ABC-001"}, "central")
-        self.assertEqual(grouped["ABC-001"]["A-01"], Decimal("7.25"))
+        self.assertEqual(grouped["ABC-001"]["A-01"], Decimal("7"))
 
-        self.post_quantity("2", original="7.25")
+        self.post_quantity("2", original="7")
         self.detail.refresh_from_db()
         self.assertEqual(self.detail.cantidad, Decimal("2"))
         self.assertEqual(
@@ -524,13 +524,13 @@ class InventoryCountQuantityEditTests(TestCase):
                 "cantidad_anterior", "cantidad_nueva", "modificado_por_id"
             )),
             [
-                (Decimal("7.25"), Decimal("2"), self.supervisor.pk),
-                (Decimal("5"), Decimal("7.25"), self.supervisor.pk),
+                (Decimal("7"), Decimal("2"), self.supervisor.pk),
+                (Decimal("5"), Decimal("7"), self.supervisor.pk),
             ],
         )
 
     def test_invalid_and_stale_quantities_are_not_saved(self):
-        for quantity in ("-1", "1.12345", "hola", "100000000000000"):
+        for quantity in ("-1", "1.5", "8,5", "hola", "100000000000000"):
             self.post_quantity(quantity)
             self.detail.refresh_from_db()
             self.assertEqual(self.detail.cantidad, Decimal("5"))
@@ -574,11 +574,13 @@ class InventoryCountQuantityEditTests(TestCase):
         self.assertContains(page, f'name="cantidad_{self.detail.pk}"')
         self.assertContains(page, f'name="cantidad_{second.pk}"')
         self.assertNotContains(page, f'name="cantidad_{other.pk}"')
+        self.assertContains(page, 'type="number" inputmode="numeric" min="0" max="99999999999999" step="1"')
+        self.assertNotContains(page, 'inputmode="decimal"')
 
         response = self.client.post(reverse("archivos:inventory_count_bulk_quantity"), {
             "detalle_ids": [self.detail.pk, second.pk],
             f"original_{self.detail.pk}": "5.0000",
-            f"cantidad_{self.detail.pk}": "8,5",
+            f"cantidad_{self.detail.pk}": "8",
             f"original_{second.pk}": "3.0000",
             f"cantidad_{second.pk}": "1",
             "return_to": index_url + "?editar=1&q=ABC-001",
@@ -587,7 +589,7 @@ class InventoryCountQuantityEditTests(TestCase):
         self.detail.refresh_from_db()
         second.refresh_from_db()
         other.refresh_from_db()
-        self.assertEqual(self.detail.cantidad, Decimal("8.5"))
+        self.assertEqual(self.detail.cantidad, Decimal("8"))
         self.assertEqual(second.cantidad, Decimal("1"))
         self.assertEqual(other.cantidad, Decimal("4"))
         self.assertEqual(AjusteCantidadConteoInventario.objects.count(), 2)
@@ -613,6 +615,76 @@ class InventoryCountQuantityEditTests(TestCase):
         self.assertEqual(self.detail.cantidad, Decimal("5"))
         self.assertEqual(second.cantidad, Decimal("3"))
         self.assertFalse(AjusteCantidadConteoInventario.objects.exists())
+
+    def test_can_add_an_existing_code_in_each_allowed_warehouse(self):
+        add_url = reverse("archivos:inventory_count_location")
+        index_url = reverse("archivos:inventory_count_index") + "?editar=1&q=ABC-001"
+
+        for warehouse, location in (
+            ("CENTRAL", "C-02"),
+            ("RANSA", "R-02"),
+            ("PEDREGAL", "P-02"),
+        ):
+            response = self.client.post(add_url, {
+                "carga_id": self.load.pk,
+                "codigo": "abc-001",
+                "bodega": warehouse,
+                "ubicacion": location.lower(),
+                "cantidad": "6",
+                "return_to": index_url,
+            })
+            self.assertRedirects(response, index_url)
+
+        added = DetalleConteoInventario.objects.filter(carga=self.load).exclude(pk=self.detail.pk)
+        self.assertEqual(added.count(), 3)
+        self.assertEqual(set(added.values_list("bodega", flat=True)), {"CENTRAL", "RANSA", "PEDREGAL"})
+        self.assertTrue(all(item.cantidad == Decimal("6") for item in added))
+        self.load.refresh_from_db()
+        self.assertEqual(self.load.total_registros, 4)
+        self.assertEqual(self.load.total_codigos, 1)
+        self.assertEqual(self.load.total_bodegas, 4)
+        self.assertEqual(AjusteCantidadConteoInventario.objects.count(), 3)
+
+    def test_add_location_rejects_invalid_data_duplicates_and_historical_load(self):
+        add_url = reverse("archivos:inventory_count_location")
+        valid = {
+            "carga_id": self.load.pk,
+            "codigo": "ABC-001",
+            "bodega": "CENTRAL",
+            "ubicacion": "NUEVA-01",
+            "cantidad": "2",
+        }
+        invalid_cases = (
+            {**valid, "bodega": "OTRA"},
+            {**valid, "cantidad": "1.5"},
+            {**valid, "codigo": "NO-EXISTE"},
+        )
+        for data in invalid_cases:
+            with self.subTest(data=data):
+                self.client.post(add_url, data)
+        self.assertEqual(DetalleConteoInventario.objects.count(), 1)
+
+        self.client.post(add_url, valid)
+        self.client.post(add_url, {**valid, "ubicacion": "nueva-01"})
+        self.assertEqual(DetalleConteoInventario.objects.count(), 2)
+
+        CargaConteoInventario.objects.create(
+            archivo_nombre="nuevo.xlsx", cargado_por=self.supervisor
+        )
+        response = self.client.post(add_url, {**valid, "ubicacion": "NUEVA-02"})
+        self.assertEqual(response.status_code, 403)
+        self.assertEqual(DetalleConteoInventario.objects.count(), 2)
+
+    def test_add_location_form_uses_restricted_warehouses_and_integer_quantity(self):
+        page = self.client.get(
+            reverse("archivos:inventory_count_index"),
+            {"editar": "1", "q": "ABC-001"},
+        )
+        self.assertContains(page, "Agregar ubicación adicional")
+        self.assertContains(page, 'value="ABC-001"')
+        for warehouse in ("CENTRAL", "RANSA", "PEDREGAL"):
+            self.assertContains(page, f'<option value="{warehouse}">{warehouse}</option>')
+        self.assertContains(page, 'name="cantidad" inputmode="numeric" min="0" max="99999999999999" step="1"')
 
     def test_general_edit_cannot_update_historical_count_for_any_role(self):
         bulk_url = reverse("archivos:inventory_count_bulk_quantity")
@@ -656,6 +728,55 @@ class InventoryCountQuantityEditTests(TestCase):
             list(AjusteCantidadConteoInventario.objects.values_list("modificado_por_id", flat=True)),
             [viewer.pk, manager.pk],
         )
+
+    def test_editor_only_accesses_inventory_count_and_last_change_is_visible(self):
+        editor = get_user_model().objects.create_user(
+            username="editor-conteo", password="test-2026"
+        )
+        editor.groups.add(Group.objects.get(name="Editores"))
+        self.client.force_login(editor)
+        index_url = reverse("archivos:inventory_count_index")
+
+        page = self.client.get(index_url, {"editar": "1"})
+        self.assertEqual(page.status_code, 200)
+        self.assertContains(page, "Conteo de inventario")
+        self.assertNotContains(page, 'aria-label="Resumen del conteo"')
+        self.assertNotContains(page, "Conteo seleccionado")
+        self.assertNotContains(page, "inventory-load-info")
+        self.assertContains(page, 'action="' + index_url + '#conteo-vigente"')
+        self.assertContains(page, 'value="' + index_url + '?editar=1#conteo-vigente"')
+        self.assertNotContains(page, "Cargar conteo")
+        self.assertNotContains(page, f'href="{reverse("usuarios:inicio")}"')
+
+        for forbidden_url in (
+            reverse("usuarios:inicio"),
+            reverse("archivos:index"),
+            reverse("archivos:inventory_count_upload"),
+            reverse("conteo:differences_index"),
+        ):
+            with self.subTest(url=forbidden_url):
+                self.assertEqual(self.client.get(forbidden_url).status_code, 403)
+
+        return_to = index_url + "?editar=1#conteo-vigente"
+        response = self.client.post(
+            reverse("archivos:inventory_count_bulk_quantity"),
+            {
+                "detalle_ids": [self.detail.pk],
+                f"original_{self.detail.pk}": "5.0000",
+                f"cantidad_{self.detail.pk}": "8",
+                "return_to": return_to,
+            },
+        )
+        self.assertRedirects(response, return_to)
+        self.detail.refresh_from_db()
+        self.assertEqual(self.detail.cantidad, Decimal("8"))
+
+        page = self.client.get(index_url)
+        displayed_detail = page.context["details"].object_list[0]
+        self.assertEqual(displayed_detail.last_modified_by, editor.username)
+        self.assertIsNotNone(displayed_detail.last_modified_at)
+        self.assertContains(page, editor.username)
+        self.assertNotContains(page, "Sin modificaciones")
 
 
 class BECountImportTests(TestCase):

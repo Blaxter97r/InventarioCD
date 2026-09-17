@@ -7,19 +7,15 @@
     <div><p class="eyebrow">Archivos maestros</p><h1>Conteo de inventario</h1><p>Consulta las cantidades contadas por bodega, ubicación y código.</p></div>
     <div class="inventory-page-actions">
       {% if can_edit_count and not edit_mode %}<a class="button inventory-page-edit" href="?carga={{ current_load.pk }}&q={{ query|urlencode }}&bodega={{ selected_warehouse|urlencode }}&page={{ details.number }}&editar=1">Editar cantidades</a>{% endif %}
-      {% if can_administer %}
-        <a class="button button--primary" href="{% url 'archivos:inventory_count_upload' %}"><svg viewBox="0 0 24 24"><path d="M12 16V4m0 0L7 9m5-5 5 5M5 15v4h14v-4" /></svg>Cargar conteo</a>
-      {% else %}
-        <button class="button button--primary" type="button" data-admin-permission-open><svg viewBox="0 0 24 24"><path d="M12 16V4m0 0L7 9m5-5 5 5M5 15v4h14v-4" /></svg>Cargar conteo</button>
+      {% if not is_editor %}
+        {% if can_administer %}
+          <a class="button button--primary" href="{% url 'archivos:inventory_count_upload' %}"><svg viewBox="0 0 24 24"><path d="M12 16V4m0 0L7 9m5-5 5 5M5 15v4h14v-4" /></svg>Cargar conteo</a>
+        {% else %}
+          <button class="button button--primary" type="button" data-admin-permission-open><svg viewBox="0 0 24 24"><path d="M12 16V4m0 0L7 9m5-5 5 5M5 15v4h14v-4" /></svg>Cargar conteo</button>
+        {% endif %}
       {% endif %}
     </div>
   </div>
-
-  <section class="summary" aria-label="Resumen del conteo">
-    <article><span>Registros cargados</span><strong>{% if current_load %}{{ current_load.total_registros }}{% else %}0{% endif %}</strong></article>
-    <article><span>Códigos distintos</span><strong>{{ total_codes }}</strong></article>
-    <article><span>Bodegas</span><strong>{{ total_warehouses }}</strong></article>
-  </section>
 
   <section class="data-section inventory-loads-section">
     <div class="section-heading"><div><span class="section-icon inventory-icon">H</span><div><h2>Conteos agregados</h2><p>Selecciona una carga para consultar sus registros</p></div></div><span class="record-count">{{ load_history.paginator.count }} carga{{ load_history.paginator.count|pluralize }}</span></div>
@@ -31,20 +27,16 @@
     </div>
   </section>
 
-  {% if current_load %}
-    <section class="inventory-load-info"><div><span>Conteo seleccionado</span><strong>{{ current_load.archivo_nombre }}</strong></div><div><span>Cargado</span><strong>{{ current_load.fecha_carga|date:"d/m/Y H:i" }}</strong></div><div><span>Usuario</span><strong>{{ current_load.cargado_por.username }}</strong></div></section>
-  {% endif %}
-
-  <form class="data-toolbar" method="get">
+  <form class="data-toolbar" method="get" action="{% url 'archivos:inventory_count_index' %}#conteo-vigente">
     {% if current_load %}<input type="hidden" name="carga" value="{{ current_load.pk }}" />{% endif %}
     {% if edit_mode %}<input type="hidden" name="editar" value="1" />{% endif %}
     <label class="toolbar-field toolbar-field--search"><span>Buscar código o ubicación</span><span class="toolbar-control"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7" /><path d="m16 16 4 4" /></svg><input name="q" value="{{ query }}" placeholder="Escribe un código para encontrarlo" {% if edit_mode %}autofocus{% endif %} /></span></label>
     <label class="toolbar-field toolbar-field--select"><span>Bodega</span><select name="bodega"><option value="">Todas</option>{% for warehouse in warehouses %}<option value="{{ warehouse }}" {% if selected_warehouse == warehouse %}selected{% endif %}>{{ warehouse }}</option>{% endfor %}</select></label>
     <button class="toolbar-submit" type="submit">Aplicar</button>
-    {% if query or selected_warehouse %}<a class="toolbar-clear" href="{% url 'archivos:inventory_count_index' %}{% if current_load %}?carga={{ current_load.pk }}{% if edit_mode %}&editar=1{% endif %}{% endif %}">Limpiar</a>{% endif %}
+    {% if query or selected_warehouse %}<a class="toolbar-clear" href="{% url 'archivos:inventory_count_index' %}{% if current_load %}?carga={{ current_load.pk }}{% if edit_mode %}&editar=1{% endif %}{% endif %}#conteo-vigente">Limpiar</a>{% endif %}
   </form>
 
-  <section class="data-section">
+  <section class="data-section" id="conteo-vigente">
     <div class="section-heading inventory-edit-heading">
       <div><span class="section-icon inventory-icon">C</span><div><h2>{% if can_edit_count %}Conteo vigente{% else %}Registros de conteo{% endif %}</h2><p>{% if edit_mode %}Busca un código, cambia sus cantidades y guarda los cambios de esta página{% else %}Cantidades por bodega, ubicación y código{% endif %}</p></div></div>
       <div class="inventory-edit-actions">
@@ -52,14 +44,30 @@
         {% if can_edit_count %}
           {% if edit_mode %}
             <button class="inventory-save-button" type="submit" form="inventory-bulk-edit" {% if not details %}disabled{% endif %}>Guardar cambios</button>
-            <a class="inventory-edit-button" href="?carga={{ current_load.pk }}&q={{ query|urlencode }}&bodega={{ selected_warehouse|urlencode }}&page={{ details.number }}">Cerrar edición</a>
+            <a class="inventory-edit-button" href="?carga={{ current_load.pk }}&q={{ query|urlencode }}&bodega={{ selected_warehouse|urlencode }}&page={{ details.number }}#conteo-vigente">Cerrar edición</a>
           {% endif %}
         {% endif %}
       </div>
     </div>
-    {% if edit_mode %}<form id="inventory-bulk-edit" method="post" action="{% url 'archivos:inventory_count_bulk_quantity' %}">{% csrf_token %}<input type="hidden" name="return_to" value="{{ request.get_full_path }}">{% endif %}
+    {% if edit_mode %}
+      <details class="inventory-location-card">
+        <summary>+ Agregar ubicación adicional</summary>
+        <form class="inventory-location-form" method="post" action="{% url 'archivos:inventory_count_location' %}">
+          {% csrf_token %}
+          <input type="hidden" name="return_to" value="{{ request.get_full_path }}#conteo-vigente">
+          <input type="hidden" name="carga_id" value="{{ current_load.pk }}">
+          <label><span>Código existente</span><input type="text" name="codigo" maxlength="100" value="{{ new_location_code }}" autocomplete="off" required></label>
+          <label><span>Bodega</span><select name="bodega" required><option value="CENTRAL">CENTRAL</option><option value="RANSA">RANSA</option><option value="PEDREGAL">PEDREGAL</option></select></label>
+          <label><span>Nueva ubicación</span><input type="text" name="ubicacion" maxlength="100" autocomplete="off" required></label>
+          <label><span>Cantidad entera</span><input type="number" name="cantidad" inputmode="numeric" min="0" max="99999999999999" step="1" autocomplete="off" required></label>
+          <button class="inventory-save-button" type="submit">Agregar ubicación</button>
+        </form>
+        <p>Solo se admite un código que ya exista en el conteo vigente.</p>
+      </details>
+    {% endif %}
+    {% if edit_mode %}<form id="inventory-bulk-edit" method="post" action="{% url 'archivos:inventory_count_bulk_quantity' %}">{% csrf_token %}<input type="hidden" name="return_to" value="{{ request.get_full_path }}#conteo-vigente">{% endif %}
       <div class="table-card"><div class="table-wrap"><table>
-        <thead><tr><th>Bodega</th><th>Ubicación</th><th>Código</th><th>Cantidad</th></tr></thead>
+        <thead><tr><th>Bodega</th><th>Ubicación</th><th>Código</th><th>Cantidad</th><th>Modificado por</th></tr></thead>
         <tbody>
           {% for item in details %}
             <tr>
@@ -70,18 +78,25 @@
                 {% if edit_mode %}
                   <input type="hidden" name="detalle_ids" value="{{ item.pk }}">
                   <input type="hidden" name="original_{{ item.pk }}" value="{{ item.cantidad|stringformat:'s' }}">
-                  <input class="inventory-bulk-input" type="text" inputmode="decimal" name="cantidad_{{ item.pk }}" value="{{ item.cantidad|stringformat:'s' }}" autocomplete="off" required aria-label="Cantidad contada de {{ item.codigo }} en {{ item.ubicacion }}">
+                  <input class="inventory-bulk-input" type="number" inputmode="numeric" min="0" max="99999999999999" step="1" name="cantidad_{{ item.pk }}" value="{{ item.cantidad|floatformat:'-4' }}" autocomplete="off" required aria-label="Cantidad contada de {{ item.codigo }} en {{ item.ubicacion }}">
                 {% else %}
                   <span class="inventory-quantity">{{ item.cantidad|floatformat:"-4" }}</span>
                 {% endif %}
               </td>
+              <td>
+                {% if item.last_modified_by %}
+                  <span class="inventory-modified"><strong>{{ item.last_modified_by }}</strong><small>{{ item.last_modified_at|date:"d/m/Y H:i" }}</small></span>
+                {% else %}
+                  <span class="inventory-modified inventory-modified--empty">Sin modificaciones</span>
+                {% endif %}
+              </td>
             </tr>
           {% empty %}
-            <tr><td class="empty" colspan="4">No hay registros de conteo para mostrar.</td></tr>
+            <tr><td class="empty" colspan="5">No hay registros de conteo para mostrar.</td></tr>
           {% endfor %}
         </tbody>
       </table></div>
-      {% if details.paginator.num_pages > 1 %}<nav class="pagination"><a {% if details.has_previous %}href="?carga={{ current_load.pk }}&q={{ query|urlencode }}&bodega={{ selected_warehouse|urlencode }}&page={{ details.previous_page_number }}{% if edit_mode %}&editar=1{% endif %}"{% endif %}>{% if details.has_previous %}← Anterior{% endif %}</a><span>Página {{ details.number }} de {{ details.paginator.num_pages }}</span><a {% if details.has_next %}href="?carga={{ current_load.pk }}&q={{ query|urlencode }}&bodega={{ selected_warehouse|urlencode }}&page={{ details.next_page_number }}{% if edit_mode %}&editar=1{% endif %}"{% endif %}>{% if details.has_next %}Siguiente →{% endif %}</a></nav>{% endif %}
+      {% if details.paginator.num_pages > 1 %}<nav class="pagination"><a {% if details.has_previous %}href="?carga={{ current_load.pk }}&q={{ query|urlencode }}&bodega={{ selected_warehouse|urlencode }}&page={{ details.previous_page_number }}{% if edit_mode %}&editar=1{% endif %}#conteo-vigente"{% endif %}>{% if details.has_previous %}← Anterior{% endif %}</a><span>Página {{ details.number }} de {{ details.paginator.num_pages }}</span><a {% if details.has_next %}href="?carga={{ current_load.pk }}&q={{ query|urlencode }}&bodega={{ selected_warehouse|urlencode }}&page={{ details.next_page_number }}{% if edit_mode %}&editar=1{% endif %}#conteo-vigente"{% endif %}>{% if details.has_next %}Siguiente →{% endif %}</a></nav>{% endif %}
       </div>
     {% if edit_mode %}<div class="inventory-bulk-footer"><span>Guarda antes de buscar otro código para conservar los cambios.</span><button class="inventory-save-button" type="submit" {% if not details %}disabled{% endif %}>Guardar cambios</button></div></form>{% endif %}
   </section>
@@ -104,5 +119,5 @@
     </script>
   {% endif %}
 
-  {% if not can_administer %}{% include "archivos/admin_permission_modal.html" %}{% endif %}
+  {% if not can_administer and not is_editor %}{% include "archivos/admin_permission_modal.html" %}{% endif %}
 {% endblock %}

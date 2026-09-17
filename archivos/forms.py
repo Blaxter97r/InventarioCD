@@ -1,6 +1,4 @@
 from pathlib import Path
-from decimal import Decimal, InvalidOperation
-
 from django import forms
 
 
@@ -37,19 +35,35 @@ class InventoryCountUploadForm(ExcelUploadForm):
 
 
 class InventoryCountQuantityForm(forms.Form):
-    cantidad = forms.CharField(label="Cantidad contada", max_length=40)
+    cantidad = forms.IntegerField(
+        label="Cantidad contada",
+        min_value=0,
+        max_value=99_999_999_999_999,
+        error_messages={
+            "invalid": "Ingresa una cantidad entera válida.",
+            "min_value": "La cantidad no puede ser negativa.",
+            "max_value": "La cantidad no puede superar 99,999,999,999,999.",
+        },
+    )
 
-    def clean_cantidad(self):
-        raw = self.cleaned_data["cantidad"].strip().replace(",", ".")
-        try:
-            quantity = Decimal(raw)
-        except InvalidOperation:
-            raise forms.ValidationError("Ingresa una cantidad numérica válida.")
-        if not quantity.is_finite() or quantity < 0 or quantity >= Decimal("100000000000000"):
-            raise forms.ValidationError("La cantidad debe estar entre 0 y 99,999,999,999,999.9999.")
-        if quantity != quantity.quantize(Decimal("0.0001")):
-            raise forms.ValidationError("La cantidad admite hasta cuatro decimales.")
-        return quantity
+
+class InventoryCountLocationForm(forms.Form):
+    WAREHOUSE_CHOICES = (
+        ("CENTRAL", "CENTRAL"),
+        ("RANSA", "RANSA"),
+        ("PEDREGAL", "PEDREGAL"),
+    )
+
+    codigo = forms.CharField(label="Código", max_length=100, strip=True)
+    bodega = forms.ChoiceField(label="Bodega", choices=WAREHOUSE_CHOICES)
+    ubicacion = forms.CharField(label="Nueva ubicación", max_length=100, strip=True)
+    cantidad = InventoryCountQuantityForm.base_fields["cantidad"]
+
+    def clean_codigo(self):
+        return self.cleaned_data["codigo"].upper()
+
+    def clean_ubicacion(self):
+        return self.cleaned_data["ubicacion"].upper()
 
 
 class RGEUploadForm(InventoryCountUploadForm):

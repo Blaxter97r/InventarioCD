@@ -17,7 +17,7 @@
     <div class="app-shell">
       <aside class="sidebar" id="app-sidebar" aria-label="Navegación principal">
         <div class="sidebar__header">
-          <a class="sidebar-brand" href="{% url 'usuarios:inicio' %}" title="Inventario 2026">
+          <a class="sidebar-brand" href="{% if is_editor %}{% url 'archivos:inventory_count_index' %}{% else %}{% url 'usuarios:inicio' %}{% endif %}" title="Inventario 2026">
             <span class="sidebar-brand__mark" aria-hidden="true">
               <svg viewBox="0 0 40 40"><path d="M8 11.5 20 5l12 6.5v17L20 35 8 28.5z" /><path d="m8 11.5 12 7 12-7M20 18.5V35" /></svg>
             </span>
@@ -26,6 +26,13 @@
         </div>
 
         <nav class="sidebar-nav">
+          {% if is_editor %}
+            <p class="sidebar-nav__label">Edición</p>
+            <a class="sidebar-link is-active" href="{% url 'archivos:inventory_count_index' %}" title="Conteo de inventario" aria-label="Conteo de inventario">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h16v14H4zM8 9h8M8 13h5M16 12v5m-2.5-2.5h5" /></svg>
+              <span>Conteo de inventario</span>
+            </a>
+          {% else %}
           <p class="sidebar-nav__label">General</p>
           <a class="sidebar-link {% if request.resolver_match.namespace == 'usuarios' and request.resolver_match.url_name == 'inicio' %}is-active{% endif %}" href="{% url 'usuarios:inicio' %}" title="Inicio" aria-label="Inicio">
             <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m3 11 9-8 9 8v9a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z" /></svg>
@@ -92,13 +99,14 @@
               <span>Usuarios</span>
             </a>
           {% endif %}
+          {% endif %}
         </nav>
 
         <div class="sidebar-user">
           <span class="sidebar-user__avatar">{{ request.user.username|first|upper }}</span>
           <span class="sidebar-user__data">
             <strong>{{ request.user.get_full_name|default:request.user.username }}</strong>
-            <small>{% if can_administer %}Administrador{% else %}Usuario{% endif %}</small>
+            <small>{% if can_administer %}Administrador{% elif is_editor %}Editor{% else %}Usuario{% endif %}</small>
           </span>
           <form action="{% url 'usuarios:logout' %}" method="post">
             {% csrf_token %}
