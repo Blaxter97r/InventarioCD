@@ -67,7 +67,7 @@
     {% endif %}
     {% if edit_mode %}<form id="inventory-bulk-edit" method="post" action="{% url 'archivos:inventory_count_bulk_quantity' %}">{% csrf_token %}<input type="hidden" name="return_to" value="{{ request.get_full_path }}#conteo-vigente">{% endif %}
       <div class="table-card"><div class="table-wrap"><table>
-        <thead><tr><th>Bodega</th><th>Ubicación</th><th>Código</th><th>Cantidad</th><th>Modificado por</th></tr></thead>
+        <thead><tr><th>Bodega</th><th>Ubicación</th><th>Código</th><th>Cantidad</th><th>Modificado por</th>{% if edit_mode %}<th>Acciones</th>{% endif %}</tr></thead>
         <tbody>
           {% for item in details %}
             <tr>
@@ -90,9 +90,10 @@
                   <span class="inventory-modified inventory-modified--empty">Sin modificaciones</span>
                 {% endif %}
               </td>
+              {% if edit_mode %}<td><button class="inventory-row-delete" type="submit" formaction="{% url 'archivos:inventory_count_detail_delete' item.pk %}" formnovalidate onclick="return confirm('¿Eliminar esta fila del conteo? Los cambios de cantidad sin guardar se perderán.');">Eliminar</button></td>{% endif %}
             </tr>
           {% empty %}
-            <tr><td class="empty" colspan="5">No hay registros de conteo para mostrar.</td></tr>
+            <tr><td class="empty" colspan="{% if edit_mode %}6{% else %}5{% endif %}">No hay registros de conteo para mostrar.</td></tr>
           {% endfor %}
         </tbody>
       </table></div>

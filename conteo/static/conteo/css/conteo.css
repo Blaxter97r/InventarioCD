@@ -168,6 +168,11 @@
 .recount-warehouse-state.is-finished { color: #267044; }
 .recount-finish-alert { margin: 0 18px 14px; padding: 10px 13px; border: 1px solid #bedcc7; border-radius: 8px; color: #285e38; background: #eff9f1; font-size: 10px; line-height: 1.5; }
 .recount-finish-alert.is-partial { border-color: #ecd2a8; color: #765313; background: #fff9eb; }
+.recount-as400-upload { margin: 0 18px 14px; padding: 10px 13px; border: 1px solid var(--count-line); border-radius: 8px; background: #f8fbfb; font-size: 11px; }
+.recount-as400-upload summary { color: var(--count-teal); font-weight: 800; cursor: pointer; }
+.recount-as400-upload form { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-top: 10px; }
+.recount-as400-upload button { padding: 8px 12px; border: 0; border-radius: 7px; color: #fff; background: #087f76; font-weight: 800; cursor: pointer; }
+.recount-as400-upload p { margin: 8px 0 0; color: #765313; }
 .recount-unclassified-count { color: #9b561b; font-size: 9px; font-weight: 800; white-space: nowrap; }
 .recount-unclassified { margin: 12px 14px; padding: 10px 12px; border: 1px solid #f0d4b6; border-radius: 8px; color: #754513; background: #fff9f1; font-size: 10px; line-height: 1.5; }
 .recount-warehouse { display: inline-flex; min-width: 116px; height: 40px; align-items: center; justify-content: space-between; gap: 9px; padding: 0 10px 0 12px; border: 1px solid transparent; border-radius: 9px; color: #fff; text-decoration: none; box-shadow: 0 5px 13px rgba(18, 58, 74, .12); transition: transform .16s ease, box-shadow .16s ease; }

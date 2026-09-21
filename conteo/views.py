@@ -1,6 +1,7 @@
 from functools import wraps
 from io import BytesIO
 from decimal import Decimal, ROUND_HALF_UP, localcontext
+import logging
 from urllib.parse import urlencode
 
 from django.contrib import messages
@@ -18,11 +19,14 @@ from django.utils import timezone
 
 from archivos.models import CostoProducto, Linea
 
-from .forms import DiferenciasUploadForm
+from .forms import AS400ReplacementForm, DiferenciasUploadForm
 from .models import CargaDiferencias, Diferencia, InicioReconteoBodega
 from .services import DifferenceImportError, import_differences
 from .progress import build_progress_dashboard
 from .recount_reports import WAREHOUSES, attach_warehouse_options, build_recount_pdf
+
+
+logger = logging.getLogger(__name__)
 
 
 def admin_required(view):
@@ -408,6 +412,27 @@ def recounts_view(request):
     )
 
 
+@admin_required
+def replace_recount_as400_view(request, pk):
+    if request.method != "POST":
+        raise Http404
+    load = get_object_or_404(CargaDiferencias, pk=pk, estado=CargaDiferencias.Estado.RECONTEO)
+    form = AS400ReplacementForm(request.POST, request.FILES)
+    if not form.is_valid():
+        errors = " ".join(str(error) for field_errors in form.errors.values() for error in field_errors)
+        messages.error(request, "No se adjuntó el PDF AS400. " + errors)
+        return redirect("conteo:recounts")
+
+    uploaded = form.cleaned_data["archivo_as400"]
+    uploaded.seek(0)
+    old_name = load.archivo_as400.name
+    load.archivo_as400.save(uploaded.name, uploaded, save=True)
+    if old_name and old_name != load.archivo_as400.name:
+        load.archivo_as400.storage.delete(old_name)
+    messages.success(request, "PDF AS400 adjuntado al reconteo y guardado en el disco persistente.")
+    return redirect("conteo:recounts")
+
+
 @login_required
 def start_recount_warehouse_view(request, pk, warehouse):
     if request.method != "POST" or warehouse not in WAREHOUSES:
@@ -476,16 +501,22 @@ def recount_warehouse_report_view(request, pk, warehouse):
         pk=pk,
         estado=CargaDiferencias.Estado.RECONTEO,
     )
-    report = build_recount_pdf(load, warehouse)
+    try:
+        report, missing_as400 = build_recount_pdf(load, warehouse)
+    except Exception:
+        logger.exception("Falló la generación del PDF de reconteo: carga=%s bodega=%s", load.pk, warehouse)
+        raise
     filename = (
         f"reconteo_linea_{load.linea.nlinea}_{warehouse}_"
-        f"{load.numero_reconteo}.pdf"
+        f"{load.numero_reconteo}{'_SIN_AS400' if missing_as400 else ''}.pdf"
     )
     response = HttpResponse(
         report,
         content_type="application/pdf",
     )
     response["Content-Disposition"] = f'attachment; filename="{filename}"'
+    if missing_as400:
+        response["X-AS400-Status"] = "unavailable"
     return response
 
 

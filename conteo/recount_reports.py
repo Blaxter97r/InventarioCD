@@ -2,6 +2,7 @@ from collections import defaultdict
 from decimal import Decimal
 from html import escape
 from io import BytesIO
+import logging
 
 from django.db.models.functions import Upper
 from reportlab.lib import colors
@@ -22,6 +23,7 @@ from archivos.models import (
     Sublinea,
     Ubicacion,
 )
+logger = logging.getLogger(__name__)
 
 
 WAREHOUSES = {
@@ -459,6 +461,18 @@ def _draw_page_footer(canvas, document):
     canvas.restoreState()
 
 
+def _append_as400(report, as400_content):
+    writer = PdfWriter()
+    try:
+        writer.append(PdfReader(BytesIO(report)))
+        writer.append(PdfReader(BytesIO(as400_content)))
+        merged_output = BytesIO()
+        writer.write(merged_output)
+        return merged_output.getvalue()
+    finally:
+        writer.close()
+
+
 def build_recount_pdf(load, warehouse_key):
     if warehouse_key not in WAREHOUSES:
         raise ValueError("Bodega no válida")
@@ -472,14 +486,13 @@ def build_recount_pdf(load, warehouse_key):
     )
     story = [_combined_inventory_table(rows, styles)]
     document.build(story, onFirstPage=_draw_page_footer, onLaterPages=_draw_page_footer)
-    if not load.archivo_as400:
-        return output.getvalue()
+    report = output.getvalue()
+    if load.archivo_as400:
+        try:
+            with load.archivo_as400.storage.open(load.archivo_as400.name, "rb") as as400_file:
+                return _append_as400(report, as400_file.read()), False
+        except Exception:
+            logger.exception("No se pudo abrir o anexar el AS400 de la carga %s", load.pk)
+        return report, True
 
-    writer = PdfWriter()
-    writer.append(PdfReader(BytesIO(output.getvalue())))
-    with load.archivo_as400.storage.open(load.archivo_as400.name, "rb") as as400_file:
-        writer.append(PdfReader(as400_file))
-        merged_output = BytesIO()
-        writer.write(merged_output)
-    writer.close()
-    return merged_output.getvalue()
+    return report, False

@@ -686,6 +686,48 @@ class InventoryCountQuantityEditTests(TestCase):
             self.assertContains(page, f'<option value="{warehouse}">{warehouse}</option>')
         self.assertContains(page, 'name="cantidad" inputmode="numeric" min="0" max="99999999999999" step="1"')
 
+    def test_editor_can_add_location_and_delete_its_row(self):
+        editor = get_user_model().objects.create_user(username="editor-filas", password="test-2026")
+        editor.groups.add(Group.objects.get(name="Editores"))
+        self.client.force_login(editor)
+        index_url = reverse("archivos:inventory_count_index") + "?editar=1&q=ABC-001"
+
+        response = self.client.post(reverse("archivos:inventory_count_location"), {
+            "carga_id": self.load.pk,
+            "codigo": "ABC-001",
+            "bodega": "RANSA",
+            "ubicacion": "R-02",
+            "cantidad": "6",
+            "return_to": index_url,
+        })
+        self.assertRedirects(response, index_url)
+        added = DetalleConteoInventario.objects.get(ubicacion="R-02")
+        page = self.client.get(index_url)
+        delete_url = reverse("archivos:inventory_count_detail_delete", args=[added.pk])
+        self.assertContains(page, f'formaction="{delete_url}"')
+
+        response = self.client.post(delete_url, {
+            f"original_{added.pk}": "6.0000",
+            "return_to": index_url,
+        })
+        self.assertRedirects(response, index_url)
+        self.assertFalse(DetalleConteoInventario.objects.filter(pk=added.pk).exists())
+        self.assertTrue(DetalleConteoInventario.objects.filter(pk=self.detail.pk).exists())
+        self.load.refresh_from_db()
+        self.assertEqual((self.load.total_registros, self.load.total_codigos, self.load.total_bodegas), (1, 1, 1))
+
+    def test_delete_row_rejects_stale_and_historical_count(self):
+        delete_url = reverse("archivos:inventory_count_detail_delete", args=[self.detail.pk])
+        self.assertEqual(self.client.get(delete_url).status_code, 404)
+        response = self.client.post(delete_url, {f"original_{self.detail.pk}": "4.0000"})
+        self.assertRedirects(response, reverse("archivos:inventory_count_index"))
+        self.assertTrue(DetalleConteoInventario.objects.filter(pk=self.detail.pk).exists())
+
+        CargaConteoInventario.objects.create(archivo_nombre="nuevo.xlsx", cargado_por=self.supervisor)
+        response = self.client.post(delete_url, {f"original_{self.detail.pk}": "5.0000"})
+        self.assertEqual(response.status_code, 403)
+        self.assertTrue(DetalleConteoInventario.objects.filter(pk=self.detail.pk).exists())
+
     def test_general_edit_cannot_update_historical_count_for_any_role(self):
         bulk_url = reverse("archivos:inventory_count_bulk_quantity")
         data = {

@@ -158,6 +158,8 @@ td { padding: 16px 19px; border-top: 1px solid #edf1f2; color: #536269; font-siz
 .inventory-edit-button, .inventory-save-button { display: inline-flex; min-height: 34px; align-items: center; justify-content: center; padding: 0 12px; border: 1px solid #bedbd6; border-radius: 8px; color: var(--teal); background: #fff; font-size: 11px; font-weight: 800; white-space: nowrap; cursor: pointer; }
 .inventory-save-button { border-color: var(--teal); color: #fff; background: var(--teal); }
 .inventory-save-button:disabled { opacity: .5; cursor: not-allowed; }
+.inventory-row-delete { padding: 7px 10px; border: 1px solid #e8b9b9; border-radius: 7px; color: #a12c2c; background: #fff; font-size: 11px; font-weight: 800; white-space: nowrap; cursor: pointer; }
+.inventory-row-delete:hover { background: #fff0f0; }
 .inventory-location-card { margin-bottom: 14px; padding: 14px 16px; border: 1px solid #cfe2df; border-radius: 12px; background: #f8fcfb; }
 .inventory-location-card summary { color: var(--teal); font-size: 12px; font-weight: 800; cursor: pointer; }
 .inventory-location-card > p { margin: 10px 0 0; color: var(--muted); font-size: 10px; }

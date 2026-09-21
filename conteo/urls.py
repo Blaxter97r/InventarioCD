@@ -17,6 +17,7 @@ urlpatterns = [
     path("diferencias/pendientes/<int:pk>/eliminar/", views.delete_pending_recount_view, name="delete_pending_recount"),
     path("diferencias/reconteo/<int:pk>/descargar/", views.download_recount_view, name="download_recount"),
     path("reconteos/", views.recounts_view, name="recounts"),
+    path("reconteos/<int:pk>/as400/adjuntar/", views.replace_recount_as400_view, name="replace_recount_as400"),
     path(
         "reconteos/<int:pk>/bodega/<str:warehouse>/iniciar/",
         views.start_recount_warehouse_view,

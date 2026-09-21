@@ -513,6 +513,102 @@ class DifferenceImportTests(TestCase):
             self.assertGreaterEqual(len(pages), 2)
             self.assertIn("AS400 DIFERENCIAS PRUEBA", pages[-1].extract_text())
 
+    def test_report_survives_lost_as400_file_with_clear_warning(self):
+        workbook = make_difference_workbook(
+            [("1", "2", "ABC-001", 10, 8, -2, "C-01", "", "", "", date(2026, 8, 8), time(14, 30))]
+        )
+        self.client.post(
+            reverse("conteo:differences_upload"),
+            {"linea": self.line.pk, "archivo": workbook, "archivo_as400": make_as400_pdf()},
+        )
+        load = CargaDiferencias.objects.get()
+        self.client.post(reverse("conteo:select_recount_codes", args=[load.pk]), {"select_all": "1"})
+        report_url = reverse("conteo:recount_warehouse_report", args=[load.pk, "central"])
+        load.archivo_as400.storage.delete(load.archivo_as400.name)
+
+        with self.assertLogs("conteo.recount_reports", level="ERROR"):
+            legacy_report = self.client.get(report_url)
+        self.assertEqual(legacy_report.status_code, 200)
+        self.assertEqual(legacy_report["X-AS400-Status"], "unavailable")
+        self.assertIn("SIN_AS400", legacy_report["Content-Disposition"])
+        self.assertTrue(legacy_report.content.startswith(b"%PDF-"))
+        self.assertNotIn("AS400 DIFERENCIAS PRUEBA", "\n".join(
+            page.extract_text() for page in PdfReader(BytesIO(legacy_report.content)).pages
+        ))
+
+    def test_editor_quantity_and_location_changes_keep_recount_pdf_downloadable(self):
+        workbook = make_difference_workbook(
+            [("1", "2", "ABC-001", 10, 8, -2, "C-01", "", "", "", date(2026, 8, 8), time(14, 30))]
+        )
+        self.client.post(reverse("conteo:differences_upload"), {"linea": self.line.pk, "archivo": workbook})
+        load = CargaDiferencias.objects.get()
+        self.client.post(reverse("conteo:select_recount_codes", args=[load.pk]), {"select_all": "1"})
+        count_load = CargaConteoInventario.objects.create(
+            archivo_nombre="conteo.xlsx", total_registros=1, total_codigos=1,
+            total_bodegas=1, cargado_por=self.admin,
+        )
+        detail = DetalleConteoInventario.objects.create(
+            carga=count_load, bodega="CENTRAL", ubicacion="C-01",
+            codigo="ABC-001", cantidad=Decimal("5"),
+        )
+        editor = get_user_model().objects.create_user(username="editor-pdf", password="test-2026")
+        editor.groups.add(Group.objects.get(name="Editores"))
+        self.client.force_login(editor)
+        self.assertEqual(self.client.post(reverse("archivos:inventory_count_bulk_quantity"), {
+            "detalle_ids": [detail.pk],
+            f"original_{detail.pk}": "5.0000",
+            f"cantidad_{detail.pk}": "7",
+        }).status_code, 302)
+        self.assertEqual(self.client.post(reverse("archivos:inventory_count_location"), {
+            "carga_id": count_load.pk, "codigo": "ABC-001", "bodega": "CENTRAL",
+            "ubicacion": "NUEVA-01", "cantidad": "2",
+        }).status_code, 302)
+
+        self.client.force_login(self.admin)
+        report_url = reverse("conteo:recount_warehouse_report", args=[load.pk, "central"])
+        report = self.client.get(report_url)
+        self.assertEqual(report.status_code, 200)
+        text = "\n".join(page.extract_text() for page in PdfReader(BytesIO(report.content)).pages)
+        self.assertIn("C-01", text)
+        self.assertIn("NUEVA-01", text)
+
+        added = DetalleConteoInventario.objects.get(ubicacion="NUEVA-01")
+        self.client.post(reverse("archivos:inventory_count_detail_delete", args=[added.pk]), {
+            f"original_{added.pk}": "2.0000",
+        })
+        self.assertEqual(self.client.get(report_url).status_code, 200)
+
+    def test_admin_can_restore_as400_for_existing_recount(self):
+        workbook = make_difference_workbook(
+            [("1", "2", "ABC-001", 10, 8, -2, "C-01", "", "", "", date(2026, 8, 8), time(14, 30))]
+        )
+        self.client.post(reverse("conteo:differences_upload"), {"linea": self.line.pk, "archivo": workbook})
+        load = CargaDiferencias.objects.get()
+        self.client.post(reverse("conteo:select_recount_codes", args=[load.pk]), {"select_all": "1"})
+        upload_url = reverse("conteo:replace_recount_as400", args=[load.pk])
+        report_url = reverse("conteo:recount_warehouse_report", args=[load.pk, "central"])
+        self.assertContains(self.client.get(reverse("conteo:recounts")), upload_url)
+
+        supervisor = get_user_model().objects.create_user(username="supervisor-as400", password="test-2026")
+        supervisor.groups.add(Group.objects.get(name="Supervisores"))
+        self.client.force_login(supervisor)
+        self.assertEqual(self.client.post(upload_url, {"archivo_as400": make_as400_pdf()}).status_code, 403)
+        self.client.force_login(self.admin)
+        invalid = SimpleUploadedFile("as400.pdf", b"invalido", content_type="application/pdf")
+        self.assertRedirects(self.client.post(upload_url, {"archivo_as400": invalid}), reverse("conteo:recounts"))
+        load.refresh_from_db()
+        self.assertFalse(load.archivo_as400.name)
+
+        self.assertRedirects(
+            self.client.post(upload_url, {"archivo_as400": make_as400_pdf()}),
+            reverse("conteo:recounts"),
+        )
+        load.refresh_from_db()
+        self.assertTrue(Path(load.archivo_as400.path).exists())
+        report = self.client.get(report_url)
+        self.assertEqual(report.status_code, 200)
+        self.assertIn("AS400 DIFERENCIAS PRUEBA", PdfReader(BytesIO(report.content)).pages[-1].extract_text())
+
     def test_invalid_as400_pdf_is_rejected_before_saving(self):
         workbook = make_difference_workbook(
             [("1", "2", "ABC-001", 10, 8, -2, "C-01", "", "", "", date(2026, 8, 8), time(14, 30))]

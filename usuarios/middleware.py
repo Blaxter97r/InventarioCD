@@ -8,6 +8,8 @@ EDITOR_ALLOWED_VIEWS = {
     "archivos:inventory_count_index",
     "archivos:inventory_count_quantity",
     "archivos:inventory_count_bulk_quantity",
+    "archivos:inventory_count_location",
+    "archivos:inventory_count_detail_delete",
 }
 
 

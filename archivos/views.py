@@ -475,6 +475,46 @@ def inventory_count_bulk_quantity_view(request):
 
 
 @login_required
+def inventory_count_detail_delete_view(request, pk):
+    if request.method != "POST":
+        raise Http404
+
+    index_url = reverse("archivos:inventory_count_index")
+    return_to = request.POST.get("return_to", "")
+    if not (
+        url_has_allowed_host_and_scheme(return_to, allowed_hosts={request.get_host()})
+        and urlsplit(return_to).path == index_url
+    ):
+        return_to = index_url
+
+    with transaction.atomic():
+        detail = get_object_or_404(
+            DetalleConteoInventario.objects.select_for_update(), pk=pk
+        )
+        latest_load = CargaConteoInventario.objects.select_for_update().first()
+        if not latest_load or detail.carga_id != latest_load.pk:
+            raise PermissionDenied("Solo se puede modificar el conteo vigente.")
+
+        try:
+            original_quantity = Decimal(request.POST.get(f"original_{pk}", ""))
+        except InvalidOperation:
+            original_quantity = None
+        if original_quantity != detail.cantidad:
+            messages.error(request, "La fila cambió desde que abriste la página. Actualiza antes de eliminar.")
+            return redirect(return_to)
+
+        code, location = detail.codigo, detail.ubicacion
+        detail.delete()
+        latest_load.total_registros = latest_load.detalles.count()
+        latest_load.total_codigos = latest_load.detalles.values("codigo").distinct().count()
+        latest_load.total_bodegas = latest_load.detalles.values("bodega").distinct().count()
+        latest_load.save(update_fields=("total_registros", "total_codigos", "total_bodegas"))
+
+    messages.success(request, f"Se eliminó {code} en {location} del conteo vigente.")
+    return redirect(return_to)
+
+
+@login_required
 def inventory_count_quantity_view(request, pk):
     if request.method != "POST":
         raise Http404

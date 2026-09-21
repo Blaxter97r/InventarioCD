@@ -51,6 +51,17 @@
           {% if load.finished_warehouse_labels %}
             <div class="recount-finish-alert {% if not load.all_assigned_finished %}is-partial{% endif %}" role="status"><strong>Reconteo finalizado en {{ load.finished_warehouse_labels|join:" y " }}.</strong> {% if load.remaining_warehouse_labels %}Falta finalizar {{ load.remaining_warehouse_labels|join:" y " }}.{% elif load.unclassified_codes %}Las bodegas asignadas terminaron, pero hay códigos sin bodega por revisar.{% else %}Todas las bodegas asignadas terminaron; queda pendiente la siguiente carga de diferencias.{% endif %}</div>
           {% endif %}
+          {% if can_administer %}
+            <details class="recount-as400-upload">
+              <summary>{% if load.archivo_as400 %}Reemplazar PDF AS400{% else %}Adjuntar PDF AS400 al reconteo{% endif %}</summary>
+              <form method="post" enctype="multipart/form-data" action="{% url 'conteo:replace_recount_as400' load.pk %}">
+                {% csrf_token %}
+                <input type="file" name="archivo_as400" accept=".pdf,application/pdf" required aria-label="PDF AS400 para la línea {{ load.linea.nlinea }}">
+                <button type="submit">Guardar AS400</button>
+              </form>
+              <p>Si la descarga indica SIN_AS400, vuelve a adjuntar el archivo original antes de imprimir.</p>
+            </details>
+          {% endif %}
           <div class="recount-code-panel">
             {% if load.unclassified_codes %}
               <p class="recount-unclassified"><strong>Sin bodega asignada:</strong> {{ load.unclassified_codes|join:", " }}. Revisa si estos códigos aparecen en el archivo de conteo cargado; si no aparecen, verifica su ubicación en el RGE y en el mapa.</p>
@@ -85,8 +96,14 @@
         pdfStatus.hidden = false;
         try {
           const response = await fetch(link.href, { credentials: 'same-origin' });
-          if (!response.ok || !response.headers.get('Content-Type')?.includes('application/pdf')) {
-            throw new Error('No fue posible generar el PDF.');
+          if (response.redirected) {
+            throw new Error('La sesión expiró. Vuelve a iniciar sesión y descarga el PDF.');
+          }
+          if (!response.ok) {
+            throw new Error(`No fue posible generar el PDF (HTTP ${response.status}). Informa este código al administrador.`);
+          }
+          if (!response.headers.get('Content-Type')?.includes('application/pdf')) {
+            throw new Error('El servidor respondió sin un PDF. Informa al administrador y revisa los registros de Render.');
           }
           const blobUrl = URL.createObjectURL(await response.blob());
           const disposition = response.headers.get('Content-Disposition') || '';
@@ -98,8 +115,11 @@
           download.click();
           download.remove();
           window.setTimeout(() => URL.revokeObjectURL(blobUrl), 30000);
+          if (response.headers.get('X-AS400-Status') === 'unavailable') {
+            window.alert('Se descargó el formato de reconteo, pero no incluye el PDF AS400 adjunto: el archivo ya no está disponible. Solicita volver a adjuntarlo antes de imprimir.');
+          }
         } catch (error) {
-          window.alert(error.message || 'No fue posible generar el PDF. Intenta nuevamente.');
+          window.alert(error instanceof TypeError ? 'No se pudo conectar con el servidor. Revisa tu conexión e intenta de nuevo.' : error.message || 'No fue posible generar el PDF. Intenta nuevamente.');
         } finally {
           pdfStatus.hidden = true;
           link.classList.remove('is-generating');

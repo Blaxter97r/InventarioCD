@@ -5,6 +5,10 @@ services:
     buildCommand: pip install -r requirements.txt && python manage.py collectstatic --noinput
     startCommand: python manage.py migrate --noinput && gunicorn CDINVENTARIO.wsgi:application --bind 0.0.0.0:$PORT --workers 2 --timeout 300
     healthCheckPath: /login/
+    disk:
+      name: inventario-media
+      mountPath: /opt/render/project/src/media
+      sizeGB: 1
     envVars:
       - key: DATABASE_URL
         fromDatabase:
@@ -14,6 +18,8 @@ services:
         generateValue: true
       - key: DJANGO_DEBUG
         value: "False"
+      - key: MEDIA_ROOT
+        value: /opt/render/project/src/media
 
 databases:
   - name: inventario-2026-db

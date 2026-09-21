@@ -16,6 +16,31 @@ class LineaChoiceField(forms.ModelChoiceField):
         return f"Línea {obj.nlinea} · {obj.descripcion}{pending}"
 
 
+def validate_as400_pdf(archivo):
+    if not archivo:
+        return archivo
+    if Path(archivo.name).suffix.lower() != ".pdf":
+        raise forms.ValidationError("El archivo AS400 debe tener extensión .pdf.")
+    if archivo.size > 20 * 1024 * 1024:
+        raise forms.ValidationError("El PDF AS400 no puede superar los 20 MB.")
+    try:
+        reader = PdfReader(archivo)
+        if reader.is_encrypted or not reader.pages:
+            raise forms.ValidationError("El PDF AS400 debe tener páginas y no estar protegido.")
+    except (PdfReadError, OSError, ValueError, TypeError) as error:
+        raise forms.ValidationError("El archivo AS400 no es un PDF válido.") from error
+    finally:
+        archivo.seek(0)
+    return archivo
+
+
+class AS400ReplacementForm(forms.Form):
+    archivo_as400 = forms.FileField(required=True)
+
+    def clean_archivo_as400(self):
+        return validate_as400_pdf(self.cleaned_data["archivo_as400"])
+
+
 class DiferenciasUploadForm(forms.Form):
     linea = LineaChoiceField(
         label="Línea de producto",
@@ -54,19 +79,4 @@ class DiferenciasUploadForm(forms.Form):
         return archivo
 
     def clean_archivo_as400(self):
-        archivo = self.cleaned_data.get("archivo_as400")
-        if not archivo:
-            return archivo
-        if Path(archivo.name).suffix.lower() != ".pdf":
-            raise forms.ValidationError("El archivo AS400 debe tener extensión .pdf.")
-        if archivo.size > 20 * 1024 * 1024:
-            raise forms.ValidationError("El PDF AS400 no puede superar los 20 MB.")
-        try:
-            reader = PdfReader(archivo)
-            if reader.is_encrypted or not reader.pages:
-                raise forms.ValidationError("El PDF AS400 debe tener páginas y no estar protegido.")
-        except (PdfReadError, OSError, ValueError, TypeError) as error:
-            raise forms.ValidationError("El archivo AS400 no es un PDF válido.") from error
-        finally:
-            archivo.seek(0)
-        return archivo
+        return validate_as400_pdf(self.cleaned_data.get("archivo_as400"))
