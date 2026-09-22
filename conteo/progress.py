@@ -171,13 +171,15 @@ def _build_reconciliation_data(locations, current_load, current_rge, counted_loc
 def _configured_locations(rge_locations):
     result = {key: {} for key in LOCATION_CONFIGS}
     invalid = Counter()
-    rows = Ubicacion.objects.values_list("ubicacion", "bodega", "tipo")
-    for location, warehouse, location_type in rows:
+    map_locations = set()
+    rows = Ubicacion.objects.order_by().values_list("ubicacion", "bodega", "tipo")
+    for location, warehouse, location_type in rows.iterator(chunk_size=2000):
+        normalized = _normalize(location)
+        map_locations.add(normalized)
         key = (_normalize(warehouse), _normalize(location_type))
         config = LOCATION_CONFIGS.get(key)
         if not config:
             continue
-        normalized = _normalize(location)
         if normalized not in rge_locations:
             continue
         dimensions = _parse_location(normalized, config)
@@ -185,7 +187,7 @@ def _configured_locations(rge_locations):
             result[key][normalized] = dimensions
         else:
             invalid[key] += 1
-    return result, invalid
+    return result, invalid, map_locations
 
 
 def _build_tree(scoped_expected, matched, reconciliation, config):
@@ -234,10 +236,9 @@ def _build_tree(scoped_expected, matched, reconciliation, config):
     return make_level(set(scoped_expected), 0) if scoped_expected else []
 
 
-def build_progress_dashboard(selected_floor="", selected_warehouse="", selected_type=""):
+def build_progress_dashboard(selected_floor="", selected_warehouse="", selected_type="", *, summary_only=False):
     current_load = CargaConteoInventario.objects.first()
     current_rge = CargaRGE.objects.first()
-    map_locations = {_normalize(value) for value in Ubicacion.objects.values_list("ubicacion", flat=True)}
     rge_locations = set()
     if current_rge:
         rge_locations = {
@@ -246,7 +247,7 @@ def build_progress_dashboard(selected_floor="", selected_warehouse="", selected_
             .values_list("ubicacion", flat=True).order_by().distinct()
         }
 
-    expected_by_config, invalid_by_config = _configured_locations(rge_locations)
+    expected_by_config, invalid_by_config, map_locations = _configured_locations(rge_locations)
     all_expected = set().union(*(set(items) for items in expected_by_config.values()))
     counted_locations = set()
     if current_load and all_expected:
@@ -279,6 +280,14 @@ def build_progress_dashboard(selected_floor="", selected_warehouse="", selected_
             **_progress_summary(warehouse_expected, all_matched),
         })
 
+    if summary_only:
+        return {
+            "current_load": current_load,
+            "warehouse_cards": warehouse_cards,
+            "map_only_total": len(map_locations - rge_locations) if current_rge else 0,
+            "rge_only_total": len(rge_locations - map_locations),
+        }
+
     requested_key = (_normalize(selected_warehouse), _normalize(selected_type))
     key = requested_key if requested_key in LOCATION_CONFIGS else ("BODEGA CENTRAL", "PRIMARIO")
     warehouse, location_type = key
@@ -303,10 +312,12 @@ def build_progress_dashboard(selected_floor="", selected_warehouse="", selected_
         location: dims for location, dims in expected.items()
         if not selected_scope or dims[scope_key] == selected_scope
     }
-    reconciliation = _build_reconciliation_data(
-        set(scoped_expected), current_load, current_rge, matched
-    )
-    progress_tree = _build_tree(scoped_expected, matched, reconciliation, config) if selected_scope else []
+    progress_tree = []
+    if selected_scope:
+        reconciliation = _build_reconciliation_data(
+            set(scoped_expected), current_load, current_rge, matched
+        )
+        progress_tree = _build_tree(scoped_expected, matched, reconciliation, config)
 
     group_labels = [label for _, label in config["groups"]]
     pending_rows = []

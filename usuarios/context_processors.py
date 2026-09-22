@@ -19,19 +19,17 @@ def navigation_permissions(request):
             estado=CargaDiferencias.Estado.PENDIENTE
         ).count()
     if user.is_authenticated:
+        from django.db.models import OuterRef, Subquery
         from conteo.models import CargaDiferencias
 
-        selected_recount_lines = (
-            CargaDiferencias.objects.filter(estado=CargaDiferencias.Estado.RECONTEO)
-            .exclude(
-                linea_id__in=CargaDiferencias.objects.filter(
-                    estado=CargaDiferencias.Estado.PENDIENTE
-                ).values("linea_id")
-            )
-            .values("linea_id")
-            .distinct()
-            .count()
-        )
+        latest_load_id = CargaDiferencias.objects.filter(
+            linea_id=OuterRef("linea_id")
+        ).order_by("-fecha_carga", "-pk").values("pk")[:1]
+        selected_recount_lines = CargaDiferencias.objects.filter(
+            pk=Subquery(latest_load_id),
+            estado=CargaDiferencias.Estado.RECONTEO,
+            fecha_finalizacion__isnull=True,
+        ).count()
     return {
         "can_administer": can_administer,
         "is_editor": is_editor,

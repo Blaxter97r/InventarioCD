@@ -1,7 +1,7 @@
 {% extends "layouts/app_shell.html" %}
 {% load static %}
 {% block title %}Resumen por línea | Inventario 2026{% endblock %}
-{% block extra_css %}<link rel="stylesheet" href="{% static 'conteo/css/conteo.css' %}?v=20260914-5" />{% endblock %}
+{% block extra_css %}<link rel="stylesheet" href="{% static 'conteo/css/conteo.css' %}?v=20260921-1" />{% endblock %}
 {% block page_name %}Conteo · Resumen por línea{% endblock %}
 {% block page_content %}
   <div class="count-page">
@@ -23,21 +23,37 @@
     </nav>
     <div class="recount-results-heading"><h2>{{ selected_status_label }}</h2><span>{{ filtered_total }} línea{{ filtered_total|pluralize }}</span></div>
     <section class="recount-summary-card">
-      <div class="recount-summary-wrap">
-        <table class="recount-summary-table">
-          <thead><tr><th>Línea</th><th># de reconteo</th><th>Status</th><th>Actualización</th></tr></thead>
-          <tbody>
-            {% for item in recount_summary %}
-              <tr class="recount-summary-row">
-                <td><div class="queue-line"><span>{{ item.line.nlinea }}</span><div><strong>{{ item.line.descripcion }}</strong><small>Línea de producto</small></div></div></td>
-                <td>{% if item.recount_number %}<strong class="recount-number">#{{ item.recount_number }}</strong>{% else %}<span class="recount-muted">—</span>{% endif %}</td>
-                <td><span class="recount-status recount-status--{{ item.status_code|lower }}">{{ item.status_label }}</span></td>
-                <td>{% if item.load %}<span class="recount-updated">{{ item.load.fecha_finalizacion|default:item.last_progress_at|default:item.load.fecha_seleccion|default:item.load.fecha_carga|date:"d/m/Y H:i" }}</span>{% else %}<span class="recount-muted">Sin cargas</span>{% endif %}</td>
-              </tr>
-            {% empty %}<tr><td class="difference-empty" colspan="4">{% if selected_status %}No hay líneas con este estado.{% else %}No hay líneas configuradas.{% endif %}</td></tr>{% endfor %}
-          </tbody>
-        </table>
-      </div>
+      <div class="recount-summary-head" aria-hidden="true"><span>Línea</span><span># de reconteo</span><span>Status</span><span>Actualización</span></div>
+      {% for item in recount_summary %}
+        <details class="recount-summary-item">
+          <summary class="recount-summary-trigger">
+            <div class="recount-summary-line"><span class="recount-summary-chevron" aria-hidden="true">⌄</span><div class="queue-line"><span>{{ item.line.nlinea }}</span><div><strong>{{ item.line.descripcion }}</strong><small>{{ item.history|length }} carga{{ item.history|length|pluralize }} en el historial</small></div></div></div>
+            <span class="recount-summary-number">{% if item.recount_number %}<strong class="recount-number">#{{ item.recount_number }}</strong>{% else %}<span class="recount-muted">—</span>{% endif %}</span>
+            <span class="recount-summary-state"><span class="recount-status recount-status--{{ item.status_code|lower }}">{{ item.status_label }}</span></span>
+            <span class="recount-summary-updated">{% if item.load %}<span class="recount-updated">{{ item.load.fecha_finalizacion|default:item.last_progress_at|default:item.load.fecha_seleccion|default:item.load.fecha_carga|date:"d/m/Y H:i" }}</span>{% else %}<span class="recount-muted">Sin cargas</span>{% endif %}</span>
+          </summary>
+          <div class="recount-history-panel">
+            <div class="recount-history-heading"><h3>Archivos de {{ item.line.descripcion }}</h3><p>Inicio: primera bodega iniciada. Fin: cierre del reconteo o de la carga.</p></div>
+            {% if item.history %}
+              <div class="recount-history-scroll"><table class="recount-history-table">
+                <thead><tr><th>Reconteo</th><th>Estado</th><th>Inicio</th><th>Fin</th><th>Excel</th><th>PDF</th></tr></thead>
+                <tbody>
+                  {% for row in item.history %}
+                    <tr>
+                      <td><strong>{% if row.load.estado == 'RECONTEO' %}Reconteo{% else %}Carga{% endif %} #{{ row.load.numero_reconteo }}</strong><small>Subido {{ row.load.fecha_carga|date:"d/m/Y H:i" }}</small></td>
+                      <td><span class="recount-status recount-status--{{ row.status_code|lower }}">{{ row.status_label }}</span></td>
+                      <td>{% if row.started_at %}{{ row.started_at|date:"d/m/Y H:i" }}{% else %}<span class="recount-muted">—</span>{% endif %}</td>
+                      <td>{% if row.finished_at %}{{ row.finished_at|date:"d/m/Y H:i" }}{% else %}<span class="recount-muted">—</span>{% endif %}</td>
+                      <td>{% if row.load.archivo_original %}<a class="recount-file-link recount-file-link--excel" href="{% url 'conteo:download_recount' row.load.pk %}" aria-label="Descargar Excel de la carga {{ row.load.numero_reconteo }} de la línea {{ item.line.nlinea }}"><span class="recount-file-icon" aria-hidden="true">X</span>Excel</a>{% else %}<span class="recount-muted">Sin archivo</span>{% endif %}</td>
+                      <td>{% if row.load.archivo_as400 %}<a class="recount-file-link recount-file-link--pdf" href="{% url 'conteo:download_recount_as400' row.load.pk %}" aria-label="Descargar PDF de la carga {{ row.load.numero_reconteo }} de la línea {{ item.line.nlinea }}"><span class="recount-file-icon" aria-hidden="true">PDF</span>PDF</a>{% else %}<span class="recount-muted">Sin archivo</span>{% endif %}</td>
+                    </tr>
+                  {% endfor %}
+                </tbody>
+              </table></div>
+            {% else %}<p class="recount-history-empty">Aún no se han subido archivos para esta línea.</p>{% endif %}
+          </div>
+        </details>
+      {% empty %}<p class="difference-empty">{% if selected_status %}No hay líneas con este estado.{% else %}No hay líneas configuradas.{% endif %}</p>{% endfor %}
     </section>
   </div>
 {% endblock %}

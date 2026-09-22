@@ -4,12 +4,14 @@ from io import BytesIO
 from pathlib import Path
 import shutil
 import tempfile
+from unittest.mock import patch
 
 from django.contrib.auth import get_user_model
 from django.contrib.auth.models import Group
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import TestCase, override_settings
 from django.urls import reverse
+from django.utils import timezone
 from openpyxl import Workbook, load_workbook
 from pypdf import PdfReader
 from reportlab.pdfgen import canvas
@@ -330,6 +332,32 @@ class DifferenceAccessTests(TestCase):
         self.assertContains(response, "Avance detallado")
         self.assertContains(response, "Primario")
         self.assertContains(response, "Secundario")
+
+    def test_general_progress_skips_product_reconciliation(self):
+        for location in ("A01I-B01", "A01I-B02"):
+            Ubicacion.objects.create(
+                ubicacion=location, bodega="BODEGA CENTRAL", sector="1", tipo="PRIMARIO"
+            )
+        rge_load = CargaRGE.objects.create(
+            archivo_nombre="rge.xlsx", cargado_por=self.admin,
+        )
+        for location in ("A01I-B01", "A01I-B02"):
+            DetalleRGE.objects.create(carga=rge_load, codigo=location, ubicacion=location)
+        count_load = CargaConteoInventario.objects.create(
+            archivo_nombre="conteo.xlsx", cargado_por=self.admin,
+        )
+        DetalleConteoInventario.objects.create(
+            carga=count_load, bodega="CENTRAL", ubicacion="A01I-B01",
+            codigo="A01I-B01", cantidad=1,
+        )
+        self.client.force_login(self.user)
+
+        with patch("conteo.progress._build_reconciliation_data", side_effect=AssertionError):
+            response = self.client.get(reverse("conteo:progress_general"))
+
+        self.assertEqual(response.status_code, 200)
+        primary = response.context["warehouse_cards"][0]["types"][0]
+        self.assertEqual((primary["expected"], primary["counted"], primary["percentage"]), (2, 1, 50))
 
     def test_supervisor_can_open_upload_and_download_template(self):
         self.client.force_login(self.user)
@@ -944,19 +972,26 @@ class DifferenceImportTests(TestCase):
         partial = self.client.get(reverse("conteo:line_summary"))
         self.assertEqual(partial.context["status_counts"]["EN_PROCESO"], 1)
         self.assertContains(partial, "Finalizó Bodega Central · falta finalizar RANSA")
-        self.assertContains(self.client.get(reverse("conteo:recounts")), "Falta finalizar RANSA")
+        partial_recounts = self.client.get(reverse("conteo:recounts"))
+        self.assertContains(partial_recounts, "Falta finalizar RANSA")
+        self.assertEqual(partial_recounts.context["selected_recount_lines"], 1)
 
         self.client.post(finish_central)
         first.refresh_from_db()
         self.assertEqual(first.finalizado_por, self.admin)
         self.client.post(finish_ransa)
+        load.refresh_from_db()
+        self.assertIsNotNone(load.fecha_finalizacion)
         done = self.client.get(reverse("conteo:line_summary"))
         self.assertEqual(done.context["status_counts"]["RECONTEO_TERMINADO"], 1)
         self.assertContains(done, "Reconteo terminado · pendiente nueva carga")
         self.assertEqual(
             self.client.get(reverse("conteo:line_summary"), {"estado": "RECONTEO_TERMINADO"}).context["filtered_total"], 1
         )
-        self.assertContains(self.client.get(reverse("conteo:recounts")), "Todas las bodegas asignadas terminaron")
+        recount_page = self.client.get(reverse("conteo:recounts"))
+        self.assertEqual(recount_page.context["recount_total"], 0)
+        self.assertEqual(recount_page.context["selected_recount_lines"], 0)
+        self.assertContains(recount_page, "No hay reconteos pendientes")
 
     def test_cannot_start_warehouse_without_selected_codes(self):
         load = CargaDiferencias.objects.create(
@@ -991,9 +1026,25 @@ class DifferenceImportTests(TestCase):
         )
         self.client.post(reverse("conteo:start_recount_warehouse", args=[load.pk, "central"]))
         self.client.post(reverse("conteo:finish_recount_warehouse", args=[load.pk, "central"]))
+        load.refresh_from_db()
+        self.assertIsNotNone(load.fecha_finalizacion)
         summary = self.client.get(reverse("conteo:line_summary"))
         self.assertEqual(summary.context["status_counts"]["RECONTEO_TERMINADO"], 1)
-        self.assertNotContains(self.client.get(reverse("conteo:recounts")), "Falta finalizar RANSA")
+        recount_page = self.client.get(reverse("conteo:recounts"))
+        self.assertEqual(recount_page.context["recount_total"], 0)
+        self.assertEqual(recount_page.context["selected_recount_lines"], 0)
+
+        # Una carga terminada antes de este cambio también se reconoce al migrar.
+        CargaDiferencias.objects.filter(pk=load.pk).update(
+            fecha_finalizacion=None, finalizado_por=None
+        )
+        from django.apps import apps
+        from importlib import import_module
+
+        import_module("conteo.migrations.0009_mark_finished_recounts").mark_finished_recounts(apps, None)
+        load.refresh_from_db()
+        self.assertIsNotNone(load.fecha_finalizacion)
+        self.assertEqual(self.client.get(reverse("conteo:recounts")).context["selected_recount_lines"], 0)
 
     def test_shared_code_appears_in_each_warehouse_and_unique_code_only_in_its_warehouse(self):
         load = CargaDiferencias.objects.create(
@@ -1269,7 +1320,8 @@ class DifferenceImportTests(TestCase):
         self.client.post(reverse("conteo:differences_upload"), {"linea": self.line.pk, "archivo": first_file})
         manager_review_summary = self.client.get(reverse("conteo:line_summary"))
         self.assertContains(manager_review_summary, "Pte revisión Gerencia")
-        self.assertNotContains(manager_review_summary, "#1")
+        self.assertIsNone(manager_review_summary.context["recount_summary"][0]["recount_number"])
+        self.assertContains(manager_review_summary, "Carga #1")
         self.assertEqual(manager_review_summary.context["status_counts"]["PTE_GERENCIA"], 1)
         load = CargaDiferencias.objects.get()
         selected_code = load.diferencias.get(codigo="ABC-001")
@@ -1297,6 +1349,9 @@ class DifferenceImportTests(TestCase):
             [("1", "2", "ABC-003", 5, 4, -1, "A-03", "", "", "", date(2026, 8, 9), time(9, 0))]
         )
         self.client.post(reverse("conteo:differences_upload"), {"linea": self.line.pk, "archivo": second_file})
+        waiting_recounts = self.client.get(reverse("conteo:recounts"))
+        self.assertEqual(waiting_recounts.context["recount_total"], 0)
+        self.assertEqual(waiting_recounts.context["selected_recount_lines"], 0)
         self.assertEqual(
             list(CargaDiferencias.objects.order_by("numero_reconteo").values_list("numero_reconteo", flat=True)),
             [1, 2],
@@ -1312,6 +1367,7 @@ class DifferenceImportTests(TestCase):
         )
         latest_recounts_page = self.client.get(reverse("conteo:recounts"))
         self.assertEqual(latest_recounts_page.content.count(b'class="recount-card"'), 1)
+        self.assertEqual(latest_recounts_page.context["selected_recount_lines"], 1)
         self.assertContains(latest_recounts_page, "ABC-003")
         self.assertNotContains(latest_recounts_page, "ABC-001")
         latest_summary = self.client.get(reverse("conteo:line_summary"))
@@ -1364,6 +1420,76 @@ class DifferenceImportTests(TestCase):
         response = self.client.get(reverse("conteo:download_recount", args=[load.pk]))
         self.assertEqual(response.status_code, 200)
         self.assertIn("attachment", response["Content-Disposition"])
+
+    def test_line_summary_expands_uploaded_files_by_recount(self):
+        first_file = make_difference_workbook([
+            ("1", "2", "ABC-001", 10, 8, -2, "A-01", "", "", "", date(2026, 8, 8), time(14, 30)),
+        ])
+        self.client.post(
+            reverse("conteo:differences_upload"),
+            {"linea": self.line.pk, "archivo": first_file, "archivo_as400": make_as400_pdf()},
+        )
+        first_load = CargaDiferencias.objects.get()
+        self.client.post(
+            reverse("conteo:select_recount_codes", args=[first_load.pk]),
+            {"select_all": "1"},
+        )
+        first_start = InicioReconteoBodega.objects.create(
+            carga=first_load, bodega="central", iniciado_por=self.admin,
+        )
+        first_start.fecha_fin = timezone.now()
+        first_start.finalizado_por = self.admin
+        first_start.save(update_fields=("fecha_fin", "finalizado_por"))
+        first_load.fecha_finalizacion = first_start.fecha_fin
+        first_load.finalizado_por = self.admin
+        first_load.save(update_fields=("fecha_finalizacion", "finalizado_por"))
+
+        second_file = make_difference_workbook([
+            ("1", "2", "ABC-002", 10, 7, -3, "A-02", "", "", "", date(2026, 8, 9), time(9, 0)),
+        ])
+        self.client.post(
+            reverse("conteo:differences_upload"),
+            {"linea": self.line.pk, "archivo": second_file},
+        )
+        second_load = CargaDiferencias.objects.get(numero_reconteo=2)
+
+        page = self.client.get(reverse("conteo:line_summary"))
+        history = page.context["recount_summary"][0]["history"]
+        self.assertEqual([row["load"].pk for row in history], [second_load.pk, first_load.pk])
+        self.assertEqual(history[0]["status_code"], "PTE_GERENCIA")
+        self.assertEqual(history[1]["status_code"], "RECONTEO_TERMINADO")
+        self.assertIsNotNone(history[1]["started_at"])
+        self.assertEqual(history[1]["finished_at"], first_start.fecha_fin)
+        self.assertContains(page, '<details class="recount-summary-item">')
+        self.assertContains(page, reverse("conteo:download_recount", args=[first_load.pk]))
+        self.assertContains(page, reverse("conteo:download_recount", args=[second_load.pk]))
+        self.assertContains(page, reverse("conteo:download_recount_as400", args=[first_load.pk]))
+        self.assertNotContains(page, reverse("conteo:download_recount_as400", args=[second_load.pk]))
+
+        supervisor = get_user_model().objects.create_user(username="supervisor-descarga")
+        supervisor.groups.add(Group.objects.get(name="Supervisores"))
+        self.client.force_login(supervisor)
+        excel = self.client.get(reverse("conteo:download_recount", args=[first_load.pk]))
+        self.assertEqual(excel.status_code, 200)
+        self.assertIn("attachment", excel["Content-Disposition"])
+        pdf = self.client.get(reverse("conteo:download_recount_as400", args=[first_load.pk]))
+        self.assertEqual(pdf.status_code, 200)
+        self.assertEqual(pdf["Content-Type"], "application/pdf")
+        self.assertIn("AS400_linea_1_reconteo_1.pdf", pdf["Content-Disposition"])
+        self.assertTrue(b"".join(pdf.streaming_content).startswith(b"%PDF-"))
+        self.assertEqual(
+            self.client.get(reverse("conteo:download_recount_as400", args=[second_load.pk])).status_code,
+            404,
+        )
+        self.client.logout()
+        self.assertEqual(
+            self.client.get(reverse("conteo:download_recount", args=[first_load.pk])).status_code,
+            302,
+        )
+        self.assertEqual(
+            self.client.get(reverse("conteo:download_recount_as400", args=[first_load.pk])).status_code,
+            302,
+        )
 
     def test_manager_can_select_all_codes(self):
         workbook = make_difference_workbook(

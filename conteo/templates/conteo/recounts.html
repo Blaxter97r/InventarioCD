@@ -13,7 +13,7 @@
       {% for load in recounts %}
         <article class="recount-card">
           <div class="recount-card__summary">
-            <div class="queue-line"><span>{{ load.linea.nlinea }}</span><div><strong>{{ load.linea.descripcion }}</strong><small>{% if load.all_assigned_finished %}Reconteo terminado · pendiente nueva carga{% else %}Línea en reconteo{% endif %}</small></div></div>
+            <div class="queue-line"><span>{{ load.linea.nlinea }}</span><div><strong>{{ load.linea.descripcion }}</strong><small>{% if load.has_started %}Línea en reconteo{% else %}Pendiente de iniciar reconteo{% endif %}</small></div></div>
             <div class="queue-meta"><span>Reconteo</span><strong>#{{ load.numero_reconteo }}</strong></div>
             <div class="queue-meta"><span>Códigos por recontar</span><strong>{{ load.selected_count }}</strong></div>
             <div class="recount-selected-by"><span>Seleccionados por</span><strong>{{ load.seleccionado_por.get_full_name|default:load.seleccionado_por.username }}</strong><small>{{ load.fecha_seleccion|date:"d/m/Y H:i" }} · origen #{{ load.numero_reconteo }}</small></div>
@@ -49,7 +49,7 @@
             <details class="recount-details"><summary>Ver códigos</summary></details>
           </div>
           {% if load.finished_warehouse_labels %}
-            <div class="recount-finish-alert {% if not load.all_assigned_finished %}is-partial{% endif %}" role="status"><strong>Reconteo finalizado en {{ load.finished_warehouse_labels|join:" y " }}.</strong> {% if load.remaining_warehouse_labels %}Falta finalizar {{ load.remaining_warehouse_labels|join:" y " }}.{% elif load.unclassified_codes %}Las bodegas asignadas terminaron, pero hay códigos sin bodega por revisar.{% else %}Todas las bodegas asignadas terminaron; queda pendiente la siguiente carga de diferencias.{% endif %}</div>
+            <div class="recount-finish-alert is-partial" role="status"><strong>Reconteo finalizado en {{ load.finished_warehouse_labels|join:" y " }}.</strong> {% if load.remaining_warehouse_labels %}Falta finalizar {{ load.remaining_warehouse_labels|join:" y " }}.{% elif load.unclassified_codes %}Las bodegas asignadas terminaron, pero hay códigos sin bodega por revisar.{% endif %}</div>
           {% endif %}
           {% if can_administer %}
             <details class="recount-as400-upload">

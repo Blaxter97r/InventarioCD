@@ -8,11 +8,12 @@ from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.core.exceptions import PermissionDenied
 from django.db import transaction
-from django.db.models import Count, IntegerField, Prefetch, Q
+from django.db.models import Count, IntegerField, OuterRef, Prefetch, Q, Subquery
 from django.db.models.functions import Cast
 from django.http import FileResponse, Http404, HttpResponse, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
+from django.utils.text import slugify
 from openpyxl import Workbook
 from openpyxl.styles import Alignment, Font, PatternFill
 from django.utils import timezone
@@ -352,46 +353,65 @@ def delete_pending_recount_view(request, pk):
     return redirect("conteo:pending_queue")
 
 
-@manager_required
+@login_required
 def download_recount_view(request, pk):
     load = get_object_or_404(CargaDiferencias, pk=pk)
     if not load.archivo_original:
         raise Http404("El archivo original no está disponible.")
     try:
         file_handle = load.archivo_original.open("rb")
-    except FileNotFoundError as error:
+    except (FileNotFoundError, OSError) as error:
         raise Http404("El archivo original no está disponible.") from error
     return FileResponse(file_handle, as_attachment=True, filename=load.archivo_nombre)
 
 
 @login_required
+def download_recount_as400_view(request, pk):
+    load = get_object_or_404(CargaDiferencias.objects.select_related("linea"), pk=pk)
+    if not load.archivo_as400:
+        raise Http404("El archivo PDF no está disponible.")
+    try:
+        file_handle = load.archivo_as400.open("rb")
+    except (FileNotFoundError, OSError) as error:
+        raise Http404("El archivo PDF no está disponible.") from error
+    return FileResponse(
+        file_handle,
+        as_attachment=True,
+        filename=f"AS400_linea_{slugify(load.linea.nlinea)}_reconteo_{load.numero_reconteo}.pdf",
+        content_type="application/pdf",
+    )
+
+
+@login_required
 def recounts_view(request):
     selected_codes = Diferencia.objects.filter(seleccionada=True).order_by("sublinea", "codigo")
-    pending_lines = CargaDiferencias.objects.filter(
-        estado=CargaDiferencias.Estado.PENDIENTE
-    ).values("linea_id")
+    latest_load_id = CargaDiferencias.objects.filter(
+        linea_id=OuterRef("linea_id")
+    ).order_by("-fecha_carga", "-pk").values("pk")[:1]
     loads = (
-        CargaDiferencias.objects.filter(estado=CargaDiferencias.Estado.RECONTEO)
-        .exclude(linea_id__in=pending_lines)
+        CargaDiferencias.objects.filter(
+            pk=Subquery(latest_load_id),
+            estado=CargaDiferencias.Estado.RECONTEO,
+            fecha_finalizacion__isnull=True,
+        )
         .select_related("linea", "seleccionado_por")
         .prefetch_related(Prefetch("diferencias", queryset=selected_codes, to_attr="codigos_reconteo"))
         .prefetch_related("inicios_bodega")
         .annotate(selected_count=Count("diferencias", filter=Q(diferencias__seleccionada=True)))
         .order_by("linea_id", "-fecha_seleccion", "-pk")
     )
-    latest_by_line = {}
-    for load in loads:
-        latest_by_line.setdefault(load.linea_id, load)
     recounts = sorted(
-        latest_by_line.values(),
+        loads,
         key=lambda load: (
             int(load.linea.nlinea) if load.linea.nlinea.isdigit() else 10**9,
             load.linea.nlinea,
         ),
     )
     attach_warehouse_options(recounts)
+    active_recounts = []
     for load in recounts:
         started = {item.bodega: item for item in load.inicios_bodega.all()}
+        load.has_started = bool(started)
         for option in load.warehouse_options:
             option["inicio"] = started.get(option["key"])
         load.finished_warehouse_labels = [
@@ -405,10 +425,12 @@ def recounts_view(request):
         load.all_assigned_finished = bool(load.finished_warehouse_labels) and not (
             load.remaining_warehouse_labels or load.unclassified_codes
         )
+        if not load.all_assigned_finished:
+            active_recounts.append(load)
     return render(
         request,
         "conteo/recounts.html",
-        {"recounts": recounts, "recount_total": len(recounts)},
+        {"recounts": active_recounts, "recount_total": len(active_recounts)},
     )
 
 
@@ -488,6 +510,22 @@ def finish_recount_warehouse_view(request, pk, warehouse):
         progress.finalizado_por = request.user
         progress.fecha_fin = timezone.now()
         progress.save(update_fields=("finalizado_por", "fecha_fin"))
+        load.codigos_reconteo = list(load.diferencias.filter(seleccionada=True))
+        attach_warehouse_options([load])
+        finished_by_warehouse = {
+            item.bodega: item for item in load.inicios_bodega.all() if item.fecha_fin
+        }
+        assigned_warehouses = [
+            option["key"] for option in load.warehouse_options if option["count"]
+        ]
+        if (
+            assigned_warehouses
+            and not load.unclassified_codes
+            and all(key in finished_by_warehouse for key in assigned_warehouses)
+        ):
+            load.finalizado_por = request.user
+            load.fecha_finalizacion = progress.fecha_fin
+            load.save(update_fields=("finalizado_por", "fecha_finalizacion"))
     messages.success(request, f"Reconteo de {WAREHOUSES[warehouse]} finalizado.")
     return redirect("conteo:recounts")
 
@@ -583,7 +621,9 @@ def line_summary_view(request):
             assigned = [option for option in latest.warehouse_options if option["count"]]
             finished = [option for option in assigned if started.get(option["key"]) and started[option["key"]].fecha_fin]
             remaining = [option for option in assigned if option not in finished]
-            if assigned and len(finished) == len(assigned) and not latest.unclassified_codes:
+            if latest.fecha_finalizacion or (
+                assigned and len(finished) == len(assigned) and not latest.unclassified_codes
+            ):
                 status_code = "RECONTEO_TERMINADO"
                 status_label = "Reconteo terminado · pendiente nueva carga"
             elif finished:
@@ -606,6 +646,42 @@ def line_summary_view(request):
             recount_number = latest.numero_reconteo - 1 if latest.numero_reconteo > 1 else None
             status_code = "FINALIZADA"
             status_label = "Finalizada"
+        history = []
+        for history_load in line.historial_reconteos:
+            warehouse_starts = list(history_load.inicios_bodega.all())
+            if history_load.pk == latest.pk:
+                history_status_code = status_code
+                history_status_label = status_label
+            elif history_load.estado == CargaDiferencias.Estado.PENDIENTE:
+                history_status_code = "PTE_GERENCIA"
+                history_status_label = "Pte revisión Gerencia"
+            elif history_load.estado == CargaDiferencias.Estado.FINALIZADO:
+                history_status_code = "FINALIZADA"
+                history_status_label = "Finalizada sin reconteo"
+            elif history_load.fecha_finalizacion:
+                history_status_code = "RECONTEO_TERMINADO"
+                history_status_label = "Reconteo terminado"
+            elif warehouse_starts:
+                history_status_code = "EN_PROCESO"
+                history_status_label = "En proceso de reconteo"
+            else:
+                history_status_code = "PTE_INICIAR"
+                history_status_label = "Pte iniciar reconteo"
+            finished_at = history_load.fecha_finalizacion
+            if history_status_code == "RECONTEO_TERMINADO" and not finished_at:
+                finished_at = max(
+                    (item.fecha_fin for item in warehouse_starts if item.fecha_fin),
+                    default=None,
+                )
+            history.append({
+                "load": history_load,
+                "status_code": history_status_code,
+                "status_label": history_status_label,
+                "started_at": min(
+                    (item.fecha_inicio for item in warehouse_starts), default=None
+                ),
+                "finished_at": finished_at,
+            })
         summary.append(
             {
                 "line": line,
@@ -614,6 +690,7 @@ def line_summary_view(request):
                 "status_code": status_code,
                 "status_label": status_label,
                 "last_progress_at": max((item.fecha_fin or item.fecha_inicio for item in started.values()), default=None),
+                "history": history,
             }
         )
         status_counts[status_code] += 1
@@ -682,7 +759,7 @@ def reset_differences_view(request):
 
 @login_required
 def progress_general_view(request):
-    context = build_progress_dashboard()
+    context = build_progress_dashboard(summary_only=True)
     return render(request, "conteo/progress_general.html", context)
 
 

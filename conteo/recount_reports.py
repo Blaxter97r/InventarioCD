@@ -4,7 +4,7 @@ from html import escape
 from io import BytesIO
 import logging
 
-from django.db.models.functions import Upper
+from django.db.models.functions import Trim, Upper
 from reportlab.lib import colors
 from reportlab.lib.enums import TA_CENTER, TA_LEFT, TA_RIGHT
 from reportlab.lib.pagesizes import A4, landscape
@@ -61,9 +61,9 @@ def _location_catalog():
             "warehouse": _warehouse_key(warehouse),
             "type": _normalize(location_type),
         }
-        for location, warehouse, location_type in Ubicacion.objects.values_list(
+        for location, warehouse, location_type in Ubicacion.objects.order_by().values_list(
             "ubicacion", "bodega", "tipo"
-        )
+        ).iterator(chunk_size=2000)
     }
 
 
@@ -141,13 +141,22 @@ def _rge_locations_by_warehouse(codes, location_catalog=None):
     current_rge = CargaRGE.objects.first()
     if not current_rge or not codes:
         return grouped
-    location_catalog = location_catalog or _location_catalog()
-    details = (
+    details = list(
         DetalleRGE.objects.filter(carga=current_rge)
         .annotate(normalized_code=Upper("codigo"))
         .filter(normalized_code__in=codes)
         .values_list("codigo", "ubicacion", "cantidad")
     )
+    if location_catalog is None:
+        locations = {_normalize(location) for _, location, _ in details}
+        location_catalog = {
+            _normalize(location): {"warehouse": _warehouse_key(warehouse)}
+            for location, warehouse in Ubicacion.objects.annotate(
+                normalized_location=Upper(Trim("ubicacion"))
+            ).filter(normalized_location__in=locations).order_by().values_list(
+                "ubicacion", "bodega"
+            ).iterator(chunk_size=2000)
+        }
     for code, location, quantity in details:
         normalized_location = _normalize(location)
         warehouse_key = location_catalog.get(normalized_location, {}).get("warehouse")

@@ -16,6 +16,7 @@ urlpatterns = [
     path("diferencias/pendientes/<int:pk>/finalizar/", views.finalize_line_view, name="finalize_line"),
     path("diferencias/pendientes/<int:pk>/eliminar/", views.delete_pending_recount_view, name="delete_pending_recount"),
     path("diferencias/reconteo/<int:pk>/descargar/", views.download_recount_view, name="download_recount"),
+    path("diferencias/reconteo/<int:pk>/as400/descargar/", views.download_recount_as400_view, name="download_recount_as400"),
     path("reconteos/", views.recounts_view, name="recounts"),
     path("reconteos/<int:pk>/as400/adjuntar/", views.replace_recount_as400_view, name="replace_recount_as400"),
     path(
