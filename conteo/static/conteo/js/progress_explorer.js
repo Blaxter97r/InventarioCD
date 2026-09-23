@@ -30,6 +30,17 @@
   };
   const state = { group1: null, group2: null, group3: null };
   const dialog = explorer.querySelector("[data-reconciliation-dialog]");
+  const validationForm = explorer.querySelector("[data-validation-form]");
+  const validationCheckbox = explorer.querySelector("[data-validation-checkbox]");
+  const validationHelp = explorer.querySelector("[data-validation-help]");
+  const validationFeedback = explorer.querySelector("[data-validation-feedback]");
+  const rgeModificationControl = explorer.querySelector("[data-rge-modification-control]");
+  const rgeModificationCheckbox = explorer.querySelector("[data-rge-modification-checkbox]");
+  const validationUrl = explorer.dataset.validationUrl;
+  const locationType = explorer.dataset.locationType;
+  const secondaryPdfDownload = explorer.querySelector("[data-secondary-pdf-download]");
+  const restoredStateKey = `inventario:avance:explorador:${window.location.search}`;
+  let currentLocation = null;
   const dialogFields = {
     title: explorer.querySelector("[data-reconciliation-title]"),
     path: explorer.querySelector("[data-reconciliation-path]"),
@@ -102,10 +113,23 @@
       trail[key].textContent = state[key] ? labelValue(labels[key], state[key].name) : `${labels[key]} —`;
       trail[key].disabled = !state[key];
     });
+    if (secondaryPdfDownload) {
+      secondaryPdfDownload.hidden = !state.group1;
+      if (state.group1) {
+        const params = new URLSearchParams({
+          bodega: explorer.dataset.warehouse,
+          piso: explorer.dataset.scopeValue,
+          pasillo: state.group1.name,
+        });
+        secondaryPdfDownload.href = `${explorer.dataset.secondaryPdfUrl}?${params}`;
+        secondaryPdfDownload.textContent = `PDF diferencias · ${labels.group1} ${state.group1.name}`;
+      }
+    }
   };
 
   const messages = {
     counted: "La ubicación ya tiene registros en el conteo actual.",
+    validated: "La ubicación fue revisada y validada por el personal asignado.",
     possible_location_error: "Todos los productos esperados aparecen registrados en otras ubicaciones. Podría tratarse de un escaneo incorrecto.",
     needs_review: "Algunos productos aparecen en otras ubicaciones y otros todavía no se localizaron.",
     not_located: "Los productos esperados no aparecen en ninguna ubicación del conteo actual.",
@@ -120,6 +144,7 @@
   };
 
   const openReconciliation = (location) => {
+    currentLocation = location;
     dialogFields.title.textContent = location.code;
     dialogFields.path.textContent = location.path.map((item) => labelValue(item.label, item.value)).join(" · ");
     dialogFields.alert.className = `progress-reconciliation__alert is-${location.status}`;
@@ -132,6 +157,17 @@
     const table = dialogFields.products.closest("table");
     table.hidden = !location.products.length;
     dialogFields.empty.hidden = Boolean(location.products.length);
+    validationForm.hidden = location.counted;
+    validationCheckbox.checked = location.validated;
+    validationCheckbox.disabled = false;
+    const canModifyRge = locationType === "SECUNDARIO" && !location.counted && location.found_elsewhere > 0;
+    rgeModificationControl.hidden = !canModifyRge;
+    rgeModificationCheckbox.checked = location.modify_rge;
+    rgeModificationCheckbox.disabled = false;
+    validationHelp.textContent = location.validated
+      ? "Esta ubicación ya suma al avance. Desmarca el check si necesitas devolverla a pendientes."
+      : "Marca este check cuando la ubicación ya fue revisada y se tomó una decisión. Se sumará al avance.";
+    validationFeedback.textContent = "";
     location.products.forEach((product) => {
       const row = document.createElement("tr");
       const code = document.createElement("strong");
@@ -175,13 +211,15 @@
       row.type = "button";
       row.className = `progress-location is-${location.status}`;
       const marker = document.createElement("span");
-      marker.textContent = location.counted ? "✓" : (["no_reference", "no_rge"].includes(location.status) ? "?" : "!");
+      marker.textContent = location.counted || location.validated ? "✓" : (["no_reference", "no_rge"].includes(location.status) ? "?" : "!");
       const data = document.createElement("div");
       const code = document.createElement("strong");
       code.textContent = location.code;
       const detail = document.createElement("small");
       const leaf = location.leaf_value ? `${labelValue(labels.leaf, location.leaf_value)} · ` : "";
-      detail.textContent = location.counted ? `${leaf}ubicación contada` : `${leaf}${location.expected_products} productos esperados`;
+      detail.textContent = location.counted
+        ? `${leaf}ubicación contada`
+        : (location.validated ? `${leaf}ubicación validada` : `${leaf}${location.expected_products} productos esperados`);
       data.append(code, detail);
       const status = document.createElement("b");
       status.textContent = location.status_label;
@@ -229,6 +267,46 @@
   search.addEventListener("input", renderGroup1);
   explorer.querySelector("[data-reconciliation-close]")?.addEventListener("click", () => dialog.close());
   dialog?.addEventListener("click", (event) => { if (event.target === dialog) dialog.close(); });
+  const saveLocationFlag = async (field, checkbox) => {
+    if (!currentLocation || !validationUrl) return;
+    const requestedValue = checkbox.checked;
+    checkbox.disabled = true;
+    validationFeedback.textContent = "Guardando…";
+    const formData = new FormData();
+    formData.append("ubicacion", currentLocation.code);
+    formData.append("campo", field);
+    formData.append(field, String(requestedValue));
+    formData.append("csrfmiddlewaretoken", validationForm.querySelector("[name='csrfmiddlewaretoken']").value);
+    try {
+      const response = await fetch(validationUrl, {
+        method: "POST",
+        body: formData,
+        headers: { "X-Requested-With": "XMLHttpRequest" },
+      });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error || "No fue posible guardar la validación.");
+      window.sessionStorage.setItem(restoredStateKey, JSON.stringify({
+        group1: state.group1?.name,
+        group2: state.group2?.name,
+        group3: state.group3?.name,
+      }));
+      window.location.reload();
+    } catch (error) {
+      checkbox.checked = !requestedValue;
+      checkbox.disabled = false;
+      validationFeedback.textContent = error.message;
+    }
+  };
+  validationCheckbox?.addEventListener("change", () => saveLocationFlag("validada", validationCheckbox));
+  rgeModificationCheckbox?.addEventListener("change", () => saveLocationFlag("modificar_rge", rgeModificationCheckbox));
 
   renderGroup1(); renderGroup2(); renderGroup3(); renderLocations();
+  try {
+    const saved = JSON.parse(window.sessionStorage.getItem(restoredStateKey));
+    window.sessionStorage.removeItem(restoredStateKey);
+    state.group1 = group1Items.find((item) => item.name === saved.group1) || null;
+    state.group2 = state.group1?.sides.find((item) => item.name === saved.group2) || null;
+    state.group3 = state.group2?.bodies.find((item) => item.name === saved.group3) || null;
+    updateTrail(); renderGroup1(); renderGroup2(); renderGroup3(); renderLocations();
+  } catch { window.sessionStorage.removeItem(restoredStateKey); }
 })();

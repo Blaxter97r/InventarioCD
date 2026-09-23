@@ -1,7 +1,7 @@
 {% extends "layouts/app_shell.html" %}
 {% load static %}
 {% block title %}Avance del conteo | Inventario 2026{% endblock %}
-{% block extra_css %}<link rel="stylesheet" href="{% static 'conteo/css/conteo.css' %}?v=20260814-1" />{% endblock %}
+{% block extra_css %}<link rel="stylesheet" href="{% static 'conteo/css/conteo.css' %}?v=20260922-2" />{% endblock %}
 {% block page_name %}Conteo · Avance{% endblock %}
 {% block page_content %}
   <div class="count-page progress-page">
@@ -19,18 +19,18 @@
     <section class="progress-global" aria-labelledby="global-progress-title">
       <header class="progress-global__header">
         <div><p class="count-eyebrow">Vista ejecutiva</p><h2 id="global-progress-title">Avance global por bodega</h2><p>Selecciona un tipo para abrir su recorrido operativo.</p></div>
-        <div class="progress-global__total" style="--progress: {{ global_percentage }}%"><strong>{{ global_percentage }}%</strong><span>{{ global_counted_total }} de {{ global_expected_total }}</span></div>
+        <div class="progress-global__total" style="--progress: {{ global_percentage }}%"><strong>{{ global_percentage }}%</strong><span>{{ global_completed_total }} de {{ global_expected_total }}</span></div>
       </header>
       <div class="progress-warehouse-grid">
         {% for warehouse in warehouse_cards %}
           <article class="progress-warehouse {% if warehouse.value == selected_warehouse %}is-selected{% endif %}">
             <header><div><span>Bodega</span><h3>{{ warehouse.name }}</h3></div><strong>{{ warehouse.percentage }}%</strong></header>
             <div class="progress-bar"><i style="width: {{ warehouse.percentage }}%"></i></div>
-            <p>{{ warehouse.counted }} contadas · {{ warehouse.pending }} pendientes</p>
+            <p>{{ warehouse.counted }} contadas{% if warehouse.validated %} · {{ warehouse.validated }} validadas{% endif %} · {{ warehouse.pending }} pendientes</p>
             <div class="progress-type-list">
               {% for item in warehouse.types %}
                 <a href="{{ item.url }}" data-progress-floor-link class="progress-type {% if warehouse.value == selected_warehouse and item.value == selected_type %}is-selected{% endif %}">
-                  <span><b>{{ item.name }}</b><small>{{ item.counted }}/{{ item.expected }}</small></span>
+                  <span><b>{{ item.name }}</b><small>{{ item.completed }}/{{ item.expected }}</small></span>
                   <span class="progress-type__bar"><i style="width: {{ item.percentage }}%"></i></span>
                   <strong>{{ item.percentage }}%</strong>
                 </a>
@@ -46,7 +46,10 @@
 
     <div class="difference-section__heading progress-scope-heading">
       <div><p class="count-eyebrow">Detalle seleccionado</p><h2>{{ selected_warehouse|title }} · {{ selected_type|title }}</h2><p>Formato: {{ format_help }}</p></div>
-      {% if invalid_total %}<span class="progress-warning">{{ invalid_total }} ubicaciones no coinciden con el formato</span>{% endif %}
+      <div class="progress-scope-actions">
+        {% if selected_type == "SECUNDARIO" %}<a class="count-button count-button--primary" href="{% url 'conteo:rge_modifications_download' %}">Descargar modificaciones RGE</a>{% endif %}
+        {% if invalid_total %}<span class="progress-warning">{{ invalid_total }} ubicaciones no coinciden con el formato</span>{% endif %}
+      </div>
     </div>
     {% if expected_total %}
       <section class="progress-section">
@@ -59,7 +62,7 @@
             <a href="{{ scope.url }}" class="progress-floor {% if scope.name == selected_scope %}is-selected{% endif %}" data-progress-floor-link>
               <span>{{ scope_label }} {{ scope.name }}</span><strong>{{ scope.percentage }}%</strong>
               <div class="progress-bar"><i style="width: {{ scope.percentage }}%"></i></div>
-              <small>{{ scope.counted }} contadas · {{ scope.pending }} pendientes</small>
+              <small>{{ scope.counted }} contadas{% if scope.validated %} · {{ scope.validated }} validadas{% endif %} · {{ scope.pending }} pendientes</small>
             </a>
           {% endfor %}
         </div>
@@ -67,6 +70,10 @@
 
       {% if selected_scope %}
         <section class="progress-explorer" data-progress-explorer
+          data-validation-url="{% url 'conteo:validate_progress_location' %}"
+          data-location-type="{{ selected_type }}"
+          data-warehouse="{{ selected_warehouse }}"
+          data-secondary-pdf-url="{% url 'conteo:secondary_quantity_differences_pdf' %}"
           data-scope-label="{{ scope_label }}" data-scope-value="{{ selected_scope }}"
           data-group1-label="{{ group_labels.0 }}" data-group2-label="{{ group_labels.1 }}"
           data-group3-label="{{ group_labels.2 }}" data-leaf-label="{{ leaf_label }}">
@@ -74,6 +81,7 @@
             <div><p class="count-eyebrow">Recorrido operativo</p><h2>Explorar ubicaciones por conciliar</h2><p>Una ubicación sin escaneo es una alerta para investigar, no una orden automática de conteo.</p></div>
             <div class="progress-explorer__actions">
               <span class="progress-explorer__floor">{{ scope_label }} {{ selected_scope }}</span>
+              {% if selected_type == "SECUNDARIO" %}<a class="count-button progress-secondary-pdf" data-secondary-pdf-download hidden>Descargar diferencias del pasillo</a>{% endif %}
               <a class="count-button count-button--primary" href="{% url 'conteo:pending_locations_download' selected_scope %}?{{ selected_query }}"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4v12m0 0 5-5m-5 5-5-5M5 20h14" /></svg>Descargar no contadas</a>
             </div>
           </header>
@@ -114,6 +122,12 @@
             <div class="progress-reconciliation__panel">
               <header class="progress-reconciliation__header"><div><p class="count-eyebrow">Diagnóstico de ubicación</p><h2 data-reconciliation-title></h2><p data-reconciliation-path></p></div><button type="button" data-reconciliation-close aria-label="Cerrar detalle">×</button></header>
               <section class="progress-reconciliation__alert" data-reconciliation-alert><span aria-hidden="true">!</span><div><strong data-reconciliation-status></strong><p data-reconciliation-message></p></div></section>
+              <form class="progress-validation" data-validation-form>
+                {% csrf_token %}
+                <div class="progress-validation__option"><label><input type="checkbox" data-validation-checkbox><span aria-hidden="true">✓</span><strong>Ubicación validada</strong></label><p data-validation-help>Marca este check cuando la ubicación ya fue revisada y se tomó una decisión. Se sumará al avance.</p></div>
+                <div class="progress-validation__option is-rge" data-rge-modification-control hidden><label><input type="checkbox" data-rge-modification-checkbox><span aria-hidden="true">✓</span><strong>Modificar RGE</strong></label><p>El producto fue contado correctamente en otra ubicación y debe corregirse en el RGE.</p></div>
+                <small data-validation-feedback aria-live="polite"></small>
+              </form>
               <section class="progress-reconciliation__metrics">
                 <article><span>Productos esperados</span><strong data-reconciliation-expected>0</strong><small>según el RGE vigente</small></article>
                 <article><span>Encontrados en el conteo</span><strong data-reconciliation-found>0</strong><small>registrados en otro lugar</small></article>
@@ -137,5 +151,5 @@
     {% endif %}
   </div>
   <script src="{% static 'conteo/js/progress_scroll.js' %}?v=20260814-1" defer></script>
-  <script src="{% static 'conteo/js/progress_explorer.js' %}?v=20260814-1" defer></script>
+  <script src="{% static 'conteo/js/progress_explorer.js' %}?v=20260922-2" defer></script>
 {% endblock %}

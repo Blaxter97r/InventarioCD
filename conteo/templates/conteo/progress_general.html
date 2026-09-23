@@ -9,7 +9,7 @@
       <div>
         <p class="general-progress-eyebrow"><i aria-hidden="true"></i> Inventario 2026</p>
         <h1>Avance general</h1>
-        <p>Reporte general de ubicaciones contadas</p>
+        <p>Reporte general de ubicaciones contadas y validadas</p>
       </div>
       <div class="general-progress-heading__status">
         <span>Última actualización</span>
@@ -39,14 +39,14 @@
           <div class="general-progress-track" role="progressbar" aria-label="Avance de {{ warehouse.name }}" aria-valuenow="{{ warehouse.percentage }}" aria-valuemin="0" aria-valuemax="100">
             <i style="width: {{ warehouse.percentage }}%"></i>
           </div>
-          <p class="general-warehouse-card__summary"><strong>{{ warehouse.counted }}</strong> ubicaciones contadas <span></span> <b>{{ warehouse.pending }}</b> pendientes</p>
+          <p class="general-warehouse-card__summary"><strong>{{ warehouse.completed }}</strong> ubicaciones completadas ({{ warehouse.counted }} contadas + {{ warehouse.validated }} validadas) <span></span> <b>{{ warehouse.pending }}</b> pendientes</p>
 
           <div class="general-type-grid">
             {% for item in warehouse.types %}
               <section class="general-type-card">
                 <header><span>{{ item.name }}</span><strong>{{ item.percentage }}<small>%</small></strong></header>
                 <div class="general-type-track" role="progressbar" aria-label="{{ item.name }} en {{ warehouse.name }}" aria-valuenow="{{ item.percentage }}" aria-valuemin="0" aria-valuemax="100"><i style="width: {{ item.percentage }}%"></i></div>
-                <footer><span>{{ item.counted }} de {{ item.expected }} contadas</span><b>{{ item.pending }} pendientes</b></footer>
+                <footer><span>{{ item.completed }} de {{ item.expected }} completadas</span><b>{{ item.pending }} pendientes</b></footer>
               </section>
             {% endfor %}
           </div>

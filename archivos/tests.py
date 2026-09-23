@@ -6,7 +6,10 @@ from django.contrib.auth.models import Group
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import TestCase
 from django.urls import reverse
+from django.utils import timezone
 from openpyxl import Workbook, load_workbook
+
+from conteo.models import CargaDiferencias, Diferencia
 
 from .models import (
     AjusteCantidadConteoInventario,
@@ -493,6 +496,28 @@ class InventoryCountQuantityEditTests(TestCase):
             codigo="ABC-001",
             cantidad=Decimal("5.0000"),
         )
+        self.line = Linea.objects.create(
+            id_linea="L-EDIT", nlinea="10", descripcion="Línea de edición"
+        )
+        self.recount = CargaDiferencias.objects.create(
+            linea=self.line,
+            archivo_nombre="diferencias.xlsx",
+            numero_reconteo=1,
+            estado=CargaDiferencias.Estado.RECONTEO,
+            cargado_por=self.supervisor,
+            seleccionado_por=self.supervisor,
+        )
+        self.selected_difference = Diferencia.objects.create(
+            carga=self.recount,
+            sublinea="01",
+            codigo="ABC-001",
+            ultimo_conteo=5,
+            existencia=4,
+            diferencia=1,
+            fecha_generacion=timezone.localdate(),
+            hora_generacion=timezone.localtime().time(),
+            seleccionada=True,
+        )
         self.url = reverse("archivos:inventory_count_quantity", args=[self.detail.pk])
 
     def post_quantity(self, quantity, original="5.0000"):
@@ -568,7 +593,9 @@ class InventoryCountQuantityEditTests(TestCase):
             cantidad=Decimal("4"),
         )
         index_url = reverse("archivos:inventory_count_index")
-        page = self.client.get(index_url, {"editar": "1", "q": "ABC-001"})
+        page = self.client.get(index_url, {
+            "editar": "1", "reconteo": self.recount.pk, "q": "ABC-001",
+        })
         self.assertTrue(page.context["edit_mode"])
         self.assertContains(page, 'name="editar" value="1"')
         self.assertContains(page, f'name="cantidad_{self.detail.pk}"')
@@ -594,6 +621,100 @@ class InventoryCountQuantityEditTests(TestCase):
         self.assertEqual(other.cantidad, Decimal("4"))
         self.assertEqual(AjusteCantidadConteoInventario.objects.count(), 2)
 
+    def test_edit_flow_lists_recount_lines_and_orders_only_selected_codes_like_pdf(self):
+        early = DetalleConteoInventario.objects.create(
+            carga=self.load,
+            bodega="Bodega Central",
+            ubicacion="A-03",
+            codigo="ZZZ-001",
+            cantidad=Decimal("2"),
+        )
+        late = DetalleConteoInventario.objects.create(
+            carga=self.load,
+            bodega="Bodega Central",
+            ubicacion="A-02",
+            codigo="AAA-001",
+            cantidad=Decimal("3"),
+        )
+        unselected = DetalleConteoInventario.objects.create(
+            carga=self.load,
+            bodega="Bodega Central",
+            ubicacion="B-01",
+            codigo="NO-RECONTEO",
+            cantidad=Decimal("4"),
+        )
+        Diferencia.objects.create(
+            carga=self.recount,
+            sublinea="00",
+            codigo="ZZZ-001",
+            ultimo_conteo=2,
+            existencia=1,
+            diferencia=1,
+            fecha_generacion=timezone.localdate(),
+            hora_generacion=timezone.localtime().time(),
+            seleccionada=True,
+        )
+        Diferencia.objects.create(
+            carga=self.recount,
+            sublinea="02",
+            codigo="AAA-001",
+            ultimo_conteo=3,
+            existencia=1,
+            diferencia=2,
+            fecha_generacion=timezone.localdate(),
+            hora_generacion=timezone.localtime().time(),
+            seleccionada=True,
+        )
+        other_line = Linea.objects.create(
+            id_linea="L-02", nlinea="2", descripcion="Segunda línea"
+        )
+        other_recount = CargaDiferencias.objects.create(
+            linea=other_line,
+            archivo_nombre="otra.xlsx",
+            numero_reconteo=1,
+            estado=CargaDiferencias.Estado.FINALIZADO,
+            cargado_por=self.supervisor,
+            seleccionado_por=self.supervisor,
+            finalizado_por=self.supervisor,
+            fecha_finalizacion=timezone.now(),
+        )
+        Diferencia.objects.create(
+            carga=other_recount,
+            sublinea="01",
+            codigo="OTRO-001",
+            ultimo_conteo=1,
+            existencia=0,
+            diferencia=1,
+            fecha_generacion=timezone.localdate(),
+            hora_generacion=timezone.localtime().time(),
+            seleccionada=True,
+        )
+        index_url = reverse("archivos:inventory_count_index")
+
+        chooser = self.client.get(index_url, {"editar": "1"})
+
+        self.assertEqual(chooser.context["details"].paginator.count, 0)
+        self.assertEqual(
+            [item.linea.nlinea for item in chooser.context["recount_choices"]],
+            ["2", "10"],
+        )
+        self.assertContains(chooser, "Selecciona la línea del reconteo")
+        self.assertContains(chooser, "Segunda línea")
+
+        page = self.client.get(
+            index_url,
+            {"editar": "1", "reconteo": self.recount.pk},
+        )
+
+        displayed = list(page.context["details"].object_list)
+        self.assertEqual(
+            [item.pk for item in displayed],
+            [early.pk, self.detail.pk, late.pk],
+        )
+        self.assertNotIn(unselected.pk, [item.pk for item in displayed])
+        self.assertEqual(page.context["recount_codes_count"], 3)
+        self.assertContains(page, "ordenados como el PDF de reconteo")
+
     def test_general_save_rejects_all_changes_when_one_quantity_is_invalid(self):
         second = DetalleConteoInventario.objects.create(
             carga=self.load,
@@ -618,7 +739,10 @@ class InventoryCountQuantityEditTests(TestCase):
 
     def test_can_add_an_existing_code_in_each_allowed_warehouse(self):
         add_url = reverse("archivos:inventory_count_location")
-        index_url = reverse("archivos:inventory_count_index") + "?editar=1&q=ABC-001"
+        index_url = (
+            reverse("archivos:inventory_count_index")
+            + f"?editar=1&reconteo={self.recount.pk}&q=ABC-001"
+        )
 
         for warehouse, location in (
             ("CENTRAL", "C-02"),
@@ -678,7 +802,7 @@ class InventoryCountQuantityEditTests(TestCase):
     def test_add_location_form_uses_restricted_warehouses_and_integer_quantity(self):
         page = self.client.get(
             reverse("archivos:inventory_count_index"),
-            {"editar": "1", "q": "ABC-001"},
+            {"editar": "1", "reconteo": self.recount.pk, "q": "ABC-001"},
         )
         self.assertContains(page, "Agregar ubicación adicional")
         self.assertContains(page, 'value="ABC-001"')
@@ -690,7 +814,10 @@ class InventoryCountQuantityEditTests(TestCase):
         editor = get_user_model().objects.create_user(username="editor-filas", password="test-2026")
         editor.groups.add(Group.objects.get(name="Editores"))
         self.client.force_login(editor)
-        index_url = reverse("archivos:inventory_count_index") + "?editar=1&q=ABC-001"
+        index_url = (
+            reverse("archivos:inventory_count_index")
+            + f"?editar=1&reconteo={self.recount.pk}&q=ABC-001"
+        )
 
         response = self.client.post(reverse("archivos:inventory_count_location"), {
             "carga_id": self.load.pk,
@@ -779,14 +906,17 @@ class InventoryCountQuantityEditTests(TestCase):
         self.client.force_login(editor)
         index_url = reverse("archivos:inventory_count_index")
 
-        page = self.client.get(index_url, {"editar": "1"})
+        page = self.client.get(index_url, {"editar": "1", "reconteo": self.recount.pk})
         self.assertEqual(page.status_code, 200)
         self.assertContains(page, "Conteo de inventario")
         self.assertNotContains(page, 'aria-label="Resumen del conteo"')
         self.assertNotContains(page, "Conteo seleccionado")
         self.assertNotContains(page, "inventory-load-info")
         self.assertContains(page, 'action="' + index_url + '#conteo-vigente"')
-        self.assertContains(page, 'value="' + index_url + '?editar=1#conteo-vigente"')
+        self.assertContains(
+            page,
+            'value="' + index_url + f'?editar=1&amp;reconteo={self.recount.pk}#conteo-vigente"',
+        )
         self.assertNotContains(page, "Cargar conteo")
         self.assertNotContains(page, f'href="{reverse("usuarios:inicio")}"')
 
@@ -799,7 +929,7 @@ class InventoryCountQuantityEditTests(TestCase):
             with self.subTest(url=forbidden_url):
                 self.assertEqual(self.client.get(forbidden_url).status_code, 403)
 
-        return_to = index_url + "?editar=1#conteo-vigente"
+        return_to = index_url + f"?editar=1&reconteo={self.recount.pk}#conteo-vigente"
         response = self.client.post(
             reverse("archivos:inventory_count_bulk_quantity"),
             {

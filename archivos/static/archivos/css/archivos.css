@@ -152,6 +152,21 @@ td { padding: 16px 19px; border-top: 1px solid #edf1f2; color: #536269; font-siz
 .inventory-page-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 10px; }
 .inventory-page-edit { border: 1px solid #bedbd6; color: var(--teal); background: #fff; }
 .inventory-page-edit:hover { background: var(--teal-soft); }
+.inventory-recount-selector { margin-bottom: 18px; padding: 20px; border: 1px solid #d8e5e3; border-radius: 14px; background: #f8fbfa; scroll-margin-top: 18px; }
+.inventory-recount-selector .section-heading { margin-bottom: 14px; }
+.inventory-recount-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+.inventory-recount-option { display: grid; grid-template-columns: 42px minmax(0, 1fr) auto; align-items: center; gap: 12px; padding: 13px 14px; border: 1px solid #d6e2e1; border-radius: 11px; color: inherit; background: #fff; transition: border-color .16s, box-shadow .16s, transform .16s; }
+.inventory-recount-option:hover { border-color: #87c3ba; box-shadow: 0 8px 20px rgba(30, 78, 75, .07); transform: translateY(-1px); }
+.inventory-recount-option.is-selected { border-color: var(--teal); background: #edf8f6; box-shadow: inset 3px 0 var(--teal); }
+.inventory-recount-line { display: grid; width: 42px; height: 42px; place-items: center; border-radius: 10px; color: #fff; background: var(--navy); font: 800 15px "Manrope", sans-serif; }
+.inventory-recount-option.is-selected .inventory-recount-line { background: var(--teal); }
+.inventory-recount-option > span:nth-child(2) { min-width: 0; }
+.inventory-recount-option strong { display: block; overflow: hidden; color: var(--navy); font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
+.inventory-recount-option small { display: block; margin-top: 4px; color: #7c8c91; font-size: 9px; }
+.inventory-recount-option > b { color: var(--teal); font-size: 9px; white-space: nowrap; }
+.inventory-recount-empty { grid-column: 1 / -1; padding: 26px; border: 1px dashed #bdcfcc; border-radius: 11px; color: #65787b; background: #fff; text-align: center; }
+.inventory-recount-empty strong { color: var(--navy); font-size: 12px; }
+.inventory-recount-empty p { margin: 5px 0 0; font-size: 10px; }
 .inventory-edit-heading { gap: 16px; }
 .inventory-edit-heading > div:first-child { min-width: 0; }
 .inventory-edit-actions { flex-wrap: wrap; justify-content: flex-end; }
@@ -171,6 +186,7 @@ td { padding: 16px 19px; border-top: 1px solid #edf1f2; color: #536269; font-siz
 .inventory-location-form .inventory-save-button { height: 38px; }
 .inventory-bulk-input { width: 112px; max-width: 100%; height: 35px; padding: 0 9px; border: 1px solid #b9d1ce; border-radius: 7px; color: var(--navy); background: #fff; font: inherit; font-size: 12px; font-weight: 800; text-align: right; }
 .inventory-bulk-input:focus { outline: 2px solid #a9d9d2; border-color: var(--teal); }
+.inventory-bulk-input.is-changed { border-color: #d49a36; background: #fff9ed; box-shadow: 0 0 0 2px rgba(212, 154, 54, .12); }
 .inventory-modified { display: grid; gap: 2px; min-width: 116px; }
 .inventory-modified strong { color: var(--navy); font-size: 10px; }
 .inventory-modified small, .inventory-modified--empty { color: #7b8b91; font-size: 9px; }
@@ -193,6 +209,7 @@ td { padding: 16px 19px; border-top: 1px solid #edf1f2; color: #536269; font-siz
   .data-toolbar { flex-wrap: wrap; }
   .inventory-edit-heading { align-items: flex-start; flex-direction: column; }
   .inventory-edit-actions { justify-content: flex-start; }
+  .inventory-recount-grid { grid-template-columns: 1fr; }
   .inventory-location-form { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .inventory-bulk-footer { align-items: flex-start; flex-direction: column; }
   .toolbar-field--search { flex-basis: 100%; }
@@ -212,6 +229,10 @@ td { padding: 16px 19px; border-top: 1px solid #edf1f2; color: #536269; font-siz
   .toolbar-field, .toolbar-field--search, .toolbar-field--select { flex-basis: auto; width: 100%; max-width: none; }
   .toolbar-submit { width: 100%; }
   .inventory-location-form { grid-template-columns: 1fr; }
+  .inventory-recount-selector { padding: 14px; }
+  .inventory-recount-option { grid-template-columns: 38px minmax(0, 1fr); }
+  .inventory-recount-line { width: 38px; height: 38px; }
+  .inventory-recount-option > b { grid-column: 2; }
   .toolbar-clear { height: 30px; justify-content: center; }
   .line-group summary { grid-template-columns: 42px 1fr 20px; gap: 11px; padding-inline: 13px; }
   .line-number { width: 40px; height: 40px; }

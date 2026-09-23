@@ -146,3 +146,42 @@ class InicioReconteoBodega(models.Model):
         constraints = [
             models.UniqueConstraint(fields=("carga", "bodega"), name="conteo_inicio_unico_carga_bodega")
         ]
+
+
+class ValidacionUbicacion(models.Model):
+    carga_rge = models.ForeignKey(
+        "archivos.CargaRGE",
+        on_delete=models.CASCADE,
+        related_name="ubicaciones_validadas",
+        verbose_name="carga RGE",
+    )
+    ubicacion = models.CharField("ubicación", max_length=100)
+    validada_por = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.PROTECT,
+        related_name="ubicaciones_validadas",
+        verbose_name="validada por",
+    )
+    fecha_validacion = models.DateTimeField("fecha de validación", auto_now_add=True)
+    validada = models.BooleanField("ubicación validada", default=True)
+    modificar_rge = models.BooleanField("requiere modificar RGE", default=False)
+
+    class Meta:
+        ordering = ("ubicacion",)
+        verbose_name = "validación de ubicación"
+        verbose_name_plural = "validaciones de ubicaciones"
+        constraints = [
+            models.UniqueConstraint(
+                fields=("carga_rge", "ubicacion"),
+                name="conteo_validacion_unica_rge_ubicacion",
+            )
+        ]
+        indexes = [
+            models.Index(
+                fields=("carga_rge", "ubicacion"),
+                name="conteo_val_rge_ubic_idx",
+            )
+        ]
+
+    def __str__(self):
+        return f"{self.ubicacion} · {self.validada_por}"

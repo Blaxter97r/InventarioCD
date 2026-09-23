@@ -8,8 +8,18 @@ from django.contrib.auth.decorators import login_required
 from django.core.exceptions import PermissionDenied
 from django.core.paginator import Paginator
 from django.db import transaction
-from django.db.models import Count, IntegerField, OuterRef, Prefetch, Q, Subquery
-from django.db.models.functions import Cast, Lower
+from django.db.models import (
+    Case,
+    Count,
+    IntegerField,
+    OuterRef,
+    Prefetch,
+    Q,
+    Subquery,
+    Value,
+    When,
+)
+from django.db.models.functions import Cast, Lower, Upper
 from django.http import Http404, HttpResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
@@ -261,6 +271,65 @@ def inventory_count_index_view(request):
     details = DetalleConteoInventario.objects.none()
     warehouses = []
     new_location_code = ""
+    recount_choices = []
+    selected_recount = None
+    recount_codes = []
+    can_edit_count = bool(
+        current_load
+        and latest_load
+        and current_load.pk == latest_load.pk
+    )
+    edit_mode = can_edit_count and request.GET.get("editar") == "1"
+
+    if edit_mode:
+        from conteo.models import CargaDiferencias
+
+        latest_recount_id = (
+            CargaDiferencias.objects.filter(
+                linea_id=OuterRef("linea_id"),
+                diferencias__seleccionada=True,
+            )
+            .order_by("-fecha_carga", "-pk")
+            .values("pk")[:1]
+        )
+        recount_choices = list(
+            CargaDiferencias.objects.filter(
+                pk=Subquery(latest_recount_id),
+                diferencias__seleccionada=True,
+            )
+            .select_related("linea", "seleccionado_por")
+            .annotate(
+                selected_count=Count(
+                    "diferencias",
+                    filter=Q(diferencias__seleccionada=True),
+                    distinct=True,
+                )
+            )
+            .distinct()
+        )
+        recount_choices.sort(key=lambda item: (
+            int(item.linea.nlinea) if item.linea.nlinea.isdigit() else 10**9,
+            item.linea.nlinea,
+        ))
+        selected_recount_id = request.GET.get("reconteo", "").strip()
+        if selected_recount_id:
+            selected_recount = next(
+                (item for item in recount_choices if str(item.pk) == selected_recount_id),
+                None,
+            )
+            if selected_recount is None:
+                raise Http404("El reconteo seleccionado no está disponible para edición.")
+            selected_differences = list(
+                selected_recount.diferencias.filter(seleccionada=True)
+                .order_by("sublinea", "codigo", "pk")
+            )
+            seen_codes = set()
+            for difference in selected_differences:
+                normalized_code = difference.codigo.strip().upper()
+                if normalized_code and normalized_code not in seen_codes:
+                    seen_codes.add(normalized_code)
+                    recount_codes.append(normalized_code)
+
     if current_load:
         latest_adjustment = (
             AjusteCantidadConteoInventario.objects.filter(detalle_id=OuterRef("pk"))
@@ -272,6 +341,24 @@ def inventory_count_index_view(request):
             ),
             last_modified_at=Subquery(latest_adjustment.values("fecha")[:1]),
         )
+        if edit_mode:
+            if selected_recount:
+                recount_order = Case(
+                    *[
+                        When(codigo__iexact=code, then=Value(position))
+                        for position, code in enumerate(recount_codes)
+                    ],
+                    default=Value(len(recount_codes)),
+                    output_field=IntegerField(),
+                )
+                details = (
+                    details.annotate(codigo_normalizado=Upper("codigo"))
+                    .filter(codigo_normalizado__in=recount_codes)
+                    .annotate(recount_order=recount_order)
+                    .order_by("recount_order", "bodega", "ubicacion", "pk")
+                )
+            else:
+                details = details.none()
         warehouses = details.order_by("bodega").values_list("bodega", flat=True).distinct()
         if query:
             details = details.filter(
@@ -290,12 +377,6 @@ def inventory_count_index_view(request):
                 or ""
             )
 
-    can_edit_count = bool(
-        current_load
-        and latest_load
-        and current_load.pk == latest_load.pk
-    )
-
     return render(
         request,
         "archivos/inventory_count_index.html",
@@ -305,7 +386,10 @@ def inventory_count_index_view(request):
             "selected_load": selected_load,
             "current_load": current_load,
             "can_edit_count": can_edit_count,
-            "edit_mode": can_edit_count and request.GET.get("editar") == "1",
+            "edit_mode": edit_mode,
+            "recount_choices": recount_choices,
+            "selected_recount": selected_recount,
+            "recount_codes_count": len(recount_codes),
             "new_location_code": new_location_code,
             "details": Paginator(details, 50).get_page(request.GET.get("page")),
             "warehouses": warehouses,

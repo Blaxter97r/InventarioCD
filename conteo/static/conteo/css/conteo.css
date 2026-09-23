@@ -344,6 +344,7 @@
 .progress-type__bar { height: 4px; overflow: hidden; border-radius: 4px; background: #e2ecea; }
 .progress-type__bar i { display: block; height: 100%; border-radius: inherit; background: #43a998; }
 .progress-scope-heading { margin: 0 0 12px; }
+.progress-scope-actions { display: flex; align-items: center; justify-content: flex-end; gap: 10px; flex-wrap: wrap; }
 .progress-warning { padding: 7px 10px; border-radius: 8px; color: #906224; background: #fff3df; font-size: 8px; font-weight: 800; }
 .progress-data-alert { margin-top: 13px; padding: 10px 12px; border: 1px solid #ecd5ac; border-radius: 9px; color: #836837; background: #fff9ed; font-size: 8px; line-height: 1.5; }
 .progress-kpis { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 20px; }
@@ -424,6 +425,9 @@
 .progress-location.is-counted { border-color: #c9e3da; background: #f3faf7; }
 .progress-location.is-counted > span { color: #28745f; background: #dcefe8; }
 .progress-location.is-counted > b { color: #28745f; background: #dcefe8; }
+.progress-location.is-validated { border-color: #a9d9ce; background: #eef9f6; }
+.progress-location.is-validated > span { color: #fff; background: #218877; }
+.progress-location.is-validated > b { color: #176f62; background: #d7eee8; }
 .progress-reconciliation { width: min(920px, calc(100vw - 32px)); max-width: none; max-height: calc(100vh - 32px); padding: 0; overflow: hidden; border: 0; border-radius: 15px; background: #fff; box-shadow: 0 28px 80px rgba(17,42,47,.24); }
 .progress-reconciliation::backdrop { background: rgba(19,39,44,.52); backdrop-filter: blur(3px); }
 .progress-reconciliation__panel { max-height: calc(100vh - 32px); overflow-y: auto; }
@@ -441,6 +445,28 @@
 .progress-reconciliation__alert.is-no_reference, .progress-reconciliation__alert.is-no_rge { border-color: #dce4e5; background: #f8fafa; }
 .progress-reconciliation__alert.is-no_reference > span, .progress-reconciliation__alert.is-no_rge > span { color: #66777b; background: #e6ecec; }
 .progress-reconciliation__alert.is-no_reference strong, .progress-reconciliation__alert.is-no_reference p, .progress-reconciliation__alert.is-no_rge strong, .progress-reconciliation__alert.is-no_rge p { color: #66777b; }
+.progress-reconciliation__alert.is-validated { border-color: #a9d9ce; background: #eef9f6; }
+.progress-reconciliation__alert.is-validated > span { color: #fff; background: #218877; }
+.progress-reconciliation__alert.is-validated strong, .progress-reconciliation__alert.is-validated p { color: #176f62; }
+.progress-validation { margin: 0 26px 18px; padding: 14px 15px; border: 1px solid #b8dcd5; border-radius: 10px; background: #f3faf8; }
+.progress-validation[hidden] { display: none; }
+.progress-validation__option + .progress-validation__option { margin-top: 12px; padding-top: 12px; border-top: 1px solid #cfe3df; }
+.progress-validation__option[hidden] { display: none; }
+.progress-validation__option.is-rge { padding: 12px; border: 1px solid #e5c98f; border-radius: 9px; background: #fff9ec; }
+.progress-validation__option.is-rge label { color: #75531f; }
+.progress-validation__option.is-rge label > span { border-color: #c69743; }
+.progress-validation__option.is-rge input:checked + span { border-color: #b77a17; background: #b77a17; }
+.progress-validation label { display: flex; align-items: center; gap: 9px; color: #244f49; cursor: pointer; }
+.progress-validation input { position: absolute; width: 1px; height: 1px; opacity: 0; }
+.progress-validation label > span { display: grid; width: 23px; height: 23px; flex: 0 0 23px; place-items: center; border: 2px solid #8bbcb3; border-radius: 6px; color: transparent; background: #fff; font-size: 13px; font-weight: 900; }
+.progress-validation input:checked + span { border-color: #218877; color: #fff; background: #218877; }
+.progress-validation input:focus-visible + span { outline: 2px solid #77b9ad; outline-offset: 2px; }
+.progress-validation input:disabled + span { opacity: .55; }
+.progress-validation label strong { font-size: 10px; }
+.progress-validation p { margin: 7px 0 0 32px; color: #69817d; font-size: 8px; line-height: 1.5; }
+.progress-validation small { display: block; min-height: 12px; margin: 5px 0 0 32px; color: #9a4b43; font-size: 8px; font-weight: 700; }
+.progress-secondary-pdf { border: 1px solid #d7b46f; color: #75531f; background: #fff8e8; }
+.progress-secondary-pdf[hidden] { display: none; }
 .progress-reconciliation__metrics { display: grid; grid-template-columns: repeat(3,1fr); gap: 10px; padding: 0 26px 18px; }
 .progress-reconciliation__metrics article { padding: 13px 14px; border: 1px solid var(--count-line); border-radius: 10px; background: #fbfcfc; }
 .progress-reconciliation__metrics span { display: block; color: #77878b; font-size: 8px; font-weight: 800; }

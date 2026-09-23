@@ -11,6 +11,8 @@ from archivos.models import (
 )
 from django.db.models.functions import Upper
 
+from .models import ValidacionUbicacion
+
 
 LOCATION_CONFIGS = {
     ("BODEGA CENTRAL", "PRIMARIO"): {
@@ -87,22 +89,35 @@ def _percentage(counted, expected):
     return round((counted / expected) * 100) if expected else 0
 
 
-def _progress_summary(locations, matched):
-    counted = len(locations.intersection(matched))
+def _progress_summary(locations, counted_locations, validated_locations=None):
+    counted = len(locations.intersection(counted_locations))
+    validated = len(locations.intersection(validated_locations or set()) - counted_locations)
     expected = len(locations)
+    completed = counted + validated
     return {
         "expected": expected,
         "counted": counted,
-        "pending": expected - counted,
-        "percentage": _percentage(counted, expected),
+        "validated": validated,
+        "completed": completed,
+        "pending": expected - completed,
+        "percentage": _percentage(completed, expected),
     }
 
 
-def _build_reconciliation_data(locations, current_load, current_rge, counted_locations=None):
+def _build_reconciliation_data(
+    locations,
+    current_load,
+    current_rge,
+    counted_locations=None,
+    validated_locations=None,
+    modify_rge_locations=None,
+):
     if not locations:
         return {}
 
     counted_location_set = counted_locations or set()
+    validated_location_set = validated_locations or set()
+    modify_rge_location_set = modify_rge_locations or set()
     products_by_location = {location: set() for location in locations}
     if current_rge:
         for code, location in DetalleRGE.objects.filter(
@@ -144,8 +159,11 @@ def _build_reconciliation_data(locations, current_load, current_rge, counted_loc
             })
 
         is_counted = location in counted_location_set
+        is_validated = location in validated_location_set and not is_counted
         if is_counted:
             status, status_label = "counted", "Contada"
+        elif is_validated:
+            status, status_label = "validated", "Validada"
         elif products and found_elsewhere == len(products):
             status, status_label = "possible_location_error", "Posible error de ubicación"
         elif found_elsewhere:
@@ -161,6 +179,8 @@ def _build_reconciliation_data(locations, current_load, current_rge, counted_loc
             "status": status,
             "status_label": status_label,
             "counted": is_counted,
+            "validated": is_validated,
+            "modify_rge": location in modify_rge_location_set,
             "expected_products": len(products),
             "found_elsewhere": found_elsewhere,
             "products": products,
@@ -190,7 +210,7 @@ def _configured_locations(rge_locations):
     return result, invalid, map_locations
 
 
-def _build_tree(scoped_expected, matched, reconciliation, config):
+def _build_tree(scoped_expected, counted, validated, reconciliation, config):
     group_keys = [item[0] for item in config["groups"]]
 
     def make_level(locations, depth):
@@ -201,7 +221,10 @@ def _build_tree(scoped_expected, matched, reconciliation, config):
             node_locations = {
                 location for location in locations if scoped_expected[location][key] == name
             }
-            node = {"name": name, **_progress_summary(node_locations, matched)}
+            node = {
+                "name": name,
+                **_progress_summary(node_locations, counted, validated),
+            }
             if depth < 2:
                 node[child_key] = make_level(node_locations, depth + 1)
             else:
@@ -228,7 +251,7 @@ def _build_tree(scoped_expected, matched, reconciliation, config):
                         **reconciliation[location],
                     }
                     node["locations"].append(item)
-                    if location not in matched:
+                    if location not in counted and location not in validated:
                         node["pending_locations"].append(item)
             nodes.append(node)
         return nodes
@@ -258,7 +281,26 @@ def build_progress_dashboard(selected_floor="", selected_warehouse="", selected_
             .filter(ubicacion_normalizada__in=all_expected)
             .values_list("ubicacion_normalizada", flat=True).order_by().distinct()
         }
-    all_matched = all_expected.intersection(counted_locations)
+    validated_locations = set()
+    modify_rge_locations = set()
+    if current_rge and all_expected:
+        validated_locations = {
+            _normalize(value)
+            for value in ValidacionUbicacion.objects.filter(
+                carga_rge=current_rge,
+                ubicacion__in=all_expected,
+                validada=True,
+            ).values_list("ubicacion", flat=True)
+        } - counted_locations
+        modify_rge_locations = {
+            _normalize(value)
+            for value in ValidacionUbicacion.objects.filter(
+                carga_rge=current_rge,
+                ubicacion__in=all_expected,
+                modificar_rge=True,
+            ).values_list("ubicacion", flat=True)
+        }
+    all_completed = all_expected.intersection(counted_locations | validated_locations)
 
     warehouse_cards = []
     for warehouse in dict.fromkeys(key[0] for key in LOCATION_CONFIGS):
@@ -270,14 +312,14 @@ def build_progress_dashboard(selected_floor="", selected_warehouse="", selected_
             type_cards.append({
                 "name": location_type.title(),
                 "value": location_type,
-                **_progress_summary(locations, all_matched),
+                **_progress_summary(locations, counted_locations, validated_locations),
                 "url": "?" + urlencode({"bodega": warehouse, "tipo": location_type}),
             })
         warehouse_cards.append({
             "name": warehouse.title(),
             "value": warehouse,
             "types": type_cards,
-            **_progress_summary(warehouse_expected, all_matched),
+            **_progress_summary(warehouse_expected, counted_locations, validated_locations),
         })
 
     if summary_only:
@@ -293,7 +335,9 @@ def build_progress_dashboard(selected_floor="", selected_warehouse="", selected_
     warehouse, location_type = key
     config = LOCATION_CONFIGS[key]
     expected = expected_by_config[key]
-    matched = set(expected).intersection(all_matched)
+    counted = set(expected).intersection(counted_locations)
+    validated = set(expected).intersection(validated_locations)
+    completed = counted | validated
 
     scope_key = config["scope_key"]
     scopes = []
@@ -301,7 +345,7 @@ def build_progress_dashboard(selected_floor="", selected_warehouse="", selected_
         locations = {loc for loc, dims in expected.items() if dims[scope_key] == name}
         scopes.append({
             "name": name,
-            **_progress_summary(locations, matched),
+            **_progress_summary(locations, counted, validated),
             "url": "?" + urlencode({"bodega": warehouse, "tipo": location_type, "piso": name}),
         })
     available_scopes = [item["name"] for item in scopes]
@@ -315,15 +359,20 @@ def build_progress_dashboard(selected_floor="", selected_warehouse="", selected_
     progress_tree = []
     if selected_scope:
         reconciliation = _build_reconciliation_data(
-            set(scoped_expected), current_load, current_rge, matched
+            set(scoped_expected),
+            current_load,
+            current_rge,
+            counted,
+            validated,
+            modify_rge_locations,
         )
-        progress_tree = _build_tree(scoped_expected, matched, reconciliation, config)
+        progress_tree = _build_tree(scoped_expected, counted, validated, reconciliation, config)
 
     group_labels = [label for _, label in config["groups"]]
     pending_rows = []
     if selected_scope:
         for location, dims in sorted(scoped_expected.items()):
-            if location not in matched:
+            if location not in completed:
                 values = [selected_scope]
                 values.extend(dims[group_key] for group_key, _ in config["groups"])
                 if config["leaf_key"]:
@@ -340,13 +389,17 @@ def build_progress_dashboard(selected_floor="", selected_warehouse="", selected_
         "current_rge": current_rge,
         "source_label": "Conteo local (desarrollo)",
         "expected_total": len(expected),
-        "counted_total": len(matched),
-        "pending_total": len(expected) - len(matched),
-        "percentage": _percentage(len(matched), len(expected)),
+        "counted_total": len(counted),
+        "validated_total": len(validated),
+        "completed_total": len(completed),
+        "pending_total": len(expected) - len(completed),
+        "percentage": _percentage(len(completed), len(expected)),
         "global_expected_total": len(all_expected),
-        "global_counted_total": len(all_matched),
-        "global_pending_total": len(all_expected) - len(all_matched),
-        "global_percentage": _percentage(len(all_matched), len(all_expected)),
+        "global_counted_total": len(all_expected.intersection(counted_locations)),
+        "global_validated_total": len(all_expected.intersection(validated_locations)),
+        "global_completed_total": len(all_completed),
+        "global_pending_total": len(all_expected) - len(all_completed),
+        "global_percentage": _percentage(len(all_completed), len(all_expected)),
         "map_only_total": len(map_locations - rge_locations) if current_rge else 0,
         "rge_only_total": len(rge_locations - map_locations),
         "warehouse_cards": warehouse_cards,

@@ -30,7 +30,12 @@ from archivos.models import (
     Ubicacion,
 )
 
-from .models import CargaDiferencias, Diferencia, InicioReconteoBodega
+from .models import (
+    CargaDiferencias,
+    Diferencia,
+    InicioReconteoBodega,
+    ValidacionUbicacion,
+)
 from .recount_reports import (
     EXTRA_LOCATION_ROWS,
     _combined_inventory_table,
@@ -198,6 +203,251 @@ class DifferenceAccessTests(TestCase):
                 ("A", "01", "I", "B", "02", "A01I-B02"),
             ],
         )
+
+    def test_validated_location_counts_toward_progress_and_can_be_unchecked(self):
+        for location in ("A01I-B01", "A01I-B02"):
+            Ubicacion.objects.create(
+                ubicacion=location,
+                bodega="BODEGA CENTRAL",
+                sector="1",
+                tipo="PRIMARIO",
+            )
+        count_load = CargaConteoInventario.objects.create(
+            archivo_nombre="snapshot.xlsx", cargado_por=self.admin, total_registros=1
+        )
+        DetalleConteoInventario.objects.create(
+            carga=count_load,
+            bodega="CENTRAL",
+            ubicacion="A01I-B01",
+            codigo="CONTADO",
+            cantidad=1,
+        )
+        rge_load = CargaRGE.objects.create(
+            archivo_nombre="rge.xlsx",
+            total_registros=2,
+            total_codigos=2,
+            total_ubicaciones=2,
+            cargado_por=self.admin,
+        )
+        for code, location in (("CONTADO", "A01I-B01"), ("PENDIENTE", "A01I-B02")):
+            DetalleRGE.objects.create(carga=rge_load, codigo=code, ubicacion=location)
+        self.client.force_login(self.user)
+
+        response = self.client.post(
+            reverse("conteo:validate_progress_location"),
+            {"ubicacion": "a01i-b02", "validada": "true"},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        validation = ValidacionUbicacion.objects.get()
+        self.assertEqual(validation.ubicacion, "A01I-B02")
+        self.assertEqual(validation.validada_por, self.user)
+
+        progress = self.client.get(reverse("conteo:progress"), {"piso": "A"})
+        self.assertEqual(progress.context["counted_total"], 1)
+        self.assertEqual(progress.context["validated_total"], 1)
+        self.assertEqual(progress.context["completed_total"], 2)
+        self.assertEqual(progress.context["pending_total"], 0)
+        self.assertEqual(progress.context["percentage"], 100)
+        location = progress.context["progress_tree"][0]["sides"][0]["bodies"][0]["locations"][1]
+        self.assertTrue(location["validated"])
+        self.assertEqual(location["status"], "validated")
+        self.assertContains(progress, "data-validation-checkbox")
+
+        download = self.client.get(reverse("conteo:pending_locations_download", args=["A"]))
+        workbook = load_workbook(BytesIO(download.content), read_only=True, data_only=True)
+        rows = list(workbook.active.iter_rows(values_only=True))
+        workbook.close()
+        self.assertEqual(len(rows), 1)
+
+        response = self.client.post(
+            reverse("conteo:validate_progress_location"),
+            {"ubicacion": "A01I-B02", "validada": "false"},
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertFalse(ValidacionUbicacion.objects.exists())
+        progress = self.client.get(reverse("conteo:progress"), {"piso": "A"})
+        self.assertEqual(progress.context["completed_total"], 1)
+        self.assertEqual(progress.context["pending_total"], 1)
+
+    def test_counted_or_unknown_location_cannot_be_validated(self):
+        Ubicacion.objects.create(
+            ubicacion="A01I-B01", bodega="BODEGA CENTRAL", sector="1", tipo="PRIMARIO"
+        )
+        count_load = CargaConteoInventario.objects.create(
+            archivo_nombre="snapshot.xlsx", cargado_por=self.admin, total_registros=1
+        )
+        DetalleConteoInventario.objects.create(
+            carga=count_load, bodega="CENTRAL", ubicacion="A01I-B01", codigo="ABC", cantidad=1
+        )
+        rge_load = CargaRGE.objects.create(
+            archivo_nombre="rge.xlsx", cargado_por=self.admin, total_ubicaciones=1
+        )
+        DetalleRGE.objects.create(carga=rge_load, codigo="ABC", ubicacion="A01I-B01")
+        self.client.force_login(self.user)
+
+        counted = self.client.post(
+            reverse("conteo:validate_progress_location"),
+            {"ubicacion": "A01I-B01", "validada": "true"},
+        )
+        unknown = self.client.post(
+            reverse("conteo:validate_progress_location"),
+            {"ubicacion": "A01I-B99", "validada": "true"},
+        )
+
+        self.assertEqual(counted.status_code, 409)
+        self.assertEqual(unknown.status_code, 404)
+        self.assertFalse(ValidacionUbicacion.objects.exists())
+
+    def test_secondary_aisle_pdf_reports_only_same_location_quantity_differences(self):
+        for location in ("E08-045Y", "E08-046Y"):
+            Ubicacion.objects.create(
+                ubicacion=location,
+                bodega="BODEGA CENTRAL",
+                sector="8",
+                tipo="SECUNDARIO",
+            )
+        rge_load = CargaRGE.objects.create(
+            archivo_nombre="rge.xlsx", cargado_por=self.admin, total_ubicaciones=2
+        )
+        DetalleRGE.objects.create(
+            carga=rge_load, codigo="DIF-001", ubicacion="E08-045Y", cantidad=10
+        )
+        DetalleRGE.objects.create(
+            carga=rge_load, codigo="IGUAL-001", ubicacion="E08-046Y", cantidad=4
+        )
+        count_load = CargaConteoInventario.objects.create(
+            archivo_nombre="conteo.xlsx", cargado_por=self.admin
+        )
+        DetalleConteoInventario.objects.create(
+            carga=count_load, bodega="CENTRAL", ubicacion="E08-045Y",
+            codigo="DIF-001", cantidad=7,
+        )
+        DetalleConteoInventario.objects.create(
+            carga=count_load, bodega="CENTRAL", ubicacion="E08-046Y",
+            codigo="IGUAL-001", cantidad=4,
+        )
+        self.client.force_login(self.user)
+
+        response = self.client.get(
+            reverse("conteo:secondary_quantity_differences_pdf"),
+            {"bodega": "BODEGA CENTRAL", "piso": "E", "pasillo": "08"},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response["Content-Type"], "application/pdf")
+        document = PdfReader(BytesIO(response.content))
+        text = "\n".join(page.extract_text() or "" for page in document.pages)
+        self.assertIn("DIF-001", text)
+        self.assertIn("E08-045Y", text)
+        self.assertIn("Cantidad RGE", text)
+        self.assertIn("Firma auditor", text)
+        self.assertNotIn("IGUAL-001", text)
+
+        page = self.client.get(reverse("conteo:progress"), {
+            "bodega": "BODEGA CENTRAL", "tipo": "SECUNDARIO", "piso": "E",
+        })
+        self.assertContains(page, "data-secondary-pdf-download")
+        self.assertContains(page, reverse("conteo:rge_modifications_download"))
+
+    def test_secondary_modify_rge_flag_exports_actual_counted_locations(self):
+        source = "E08-045Y"
+        actual = "E08-046Y"
+        for location in (source, actual):
+            Ubicacion.objects.create(
+                ubicacion=location,
+                bodega="BODEGA CENTRAL",
+                sector="8",
+                tipo="SECUNDARIO",
+            )
+        rge_load = CargaRGE.objects.create(
+            archivo_nombre="rge.xlsx", cargado_por=self.admin, total_ubicaciones=1
+        )
+        DetalleRGE.objects.create(
+            carga=rge_load, codigo="MOVER-001", ubicacion=source, cantidad=6
+        )
+        count_load = CargaConteoInventario.objects.create(
+            archivo_nombre="conteo.xlsx", cargado_por=self.admin
+        )
+        DetalleConteoInventario.objects.create(
+            carga=count_load, bodega="CENTRAL", ubicacion=actual,
+            codigo="MOVER-001", cantidad=6,
+        )
+        self.client.force_login(self.user)
+
+        response = self.client.post(
+            reverse("conteo:validate_progress_location"),
+            {
+                "ubicacion": source,
+                "campo": "modificar_rge",
+                "modificar_rge": "true",
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        validation = ValidacionUbicacion.objects.get()
+        self.assertFalse(validation.validada)
+        self.assertTrue(validation.modificar_rge)
+        progress = self.client.get(reverse("conteo:progress"), {
+            "bodega": "BODEGA CENTRAL", "tipo": "SECUNDARIO", "piso": "E",
+        })
+        self.assertEqual(progress.context["validated_total"], 0)
+        source_item = next(
+            item
+            for aisle in progress.context["progress_tree"]
+            for shelf in aisle["sides"]
+            for level in shelf["bodies"]
+            for item in level["locations"]
+            if item["code"] == source
+        )
+        self.assertTrue(source_item["modify_rge"])
+
+        download = self.client.get(reverse("conteo:rge_modifications_download"))
+        self.assertEqual(download.status_code, 200)
+        workbook = load_workbook(BytesIO(download.content), read_only=True, data_only=True)
+        rows = list(workbook.active.iter_rows(values_only=True))
+        workbook.close()
+        self.assertEqual(rows, [
+            ("Codigo", "Ubicacion", "Cantidad contada"),
+            ("MOVER-001", actual, 6),
+        ])
+
+        response = self.client.post(
+            reverse("conteo:validate_progress_location"),
+            {
+                "ubicacion": source,
+                "campo": "validada",
+                "validada": "true",
+            },
+        )
+        self.assertEqual(response.status_code, 200)
+        validation.refresh_from_db()
+        self.assertTrue(validation.validada)
+        self.assertTrue(validation.modificar_rge)
+
+    def test_modify_rge_rejects_primary_or_location_without_products_elsewhere(self):
+        Ubicacion.objects.create(
+            ubicacion="A01I-B01", bodega="BODEGA CENTRAL", sector="1", tipo="PRIMARIO"
+        )
+        rge_load = CargaRGE.objects.create(
+            archivo_nombre="rge.xlsx", cargado_por=self.admin
+        )
+        DetalleRGE.objects.create(
+            carga=rge_load, codigo="ABC", ubicacion="A01I-B01", cantidad=1
+        )
+        self.client.force_login(self.user)
+
+        response = self.client.post(
+            reverse("conteo:validate_progress_location"),
+            {
+                "ubicacion": "A01I-B01",
+                "campo": "modificar_rge",
+                "modificar_rge": "true",
+            },
+        )
+
+        self.assertEqual(response.status_code, 409)
+        self.assertFalse(ValidacionUbicacion.objects.exists())
 
     def test_progress_only_includes_central_primary_mezzanine_locations(self):
         Ubicacion.objects.create(

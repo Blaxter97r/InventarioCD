@@ -9,21 +9,40 @@ from django.contrib.auth.decorators import login_required
 from django.core.exceptions import PermissionDenied
 from django.db import transaction
 from django.db.models import Count, IntegerField, OuterRef, Prefetch, Q, Subquery
-from django.db.models.functions import Cast
+from django.db.models.functions import Cast, Upper
 from django.http import FileResponse, Http404, HttpResponse, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 from django.utils.text import slugify
+from django.views.decorators.http import require_POST
 from openpyxl import Workbook
 from openpyxl.styles import Alignment, Font, PatternFill
 from django.utils import timezone
 
-from archivos.models import CostoProducto, Linea
+from archivos.models import (
+    CargaConteoInventario,
+    CargaRGE,
+    CostoProducto,
+    DetalleConteoInventario,
+    DetalleRGE,
+    Linea,
+    Ubicacion,
+)
 
 from .forms import AS400ReplacementForm, DiferenciasUploadForm
-from .models import CargaDiferencias, Diferencia, InicioReconteoBodega
+from .models import (
+    CargaDiferencias,
+    Diferencia,
+    InicioReconteoBodega,
+    ValidacionUbicacion,
+)
 from .services import DifferenceImportError, import_differences
-from .progress import build_progress_dashboard
+from .progress import LOCATION_CONFIGS, _normalize, _parse_location, build_progress_dashboard
+from .progress_reports import (
+    build_secondary_quantity_difference_pdf,
+    rge_modification_rows,
+    secondary_quantity_difference_rows,
+)
 from .recount_reports import WAREHOUSES, attach_warehouse_options, build_recount_pdf
 
 
@@ -771,6 +790,151 @@ def progress_view(request):
         request.GET.get("tipo", "").strip(),
     )
     return render(request, "conteo/progress.html", context)
+
+
+@login_required
+def secondary_quantity_differences_pdf_view(request):
+    warehouse = _normalize(request.GET.get("bodega", ""))
+    scope = _normalize(request.GET.get("piso", ""))
+    aisle = _normalize(request.GET.get("pasillo", ""))
+    config = LOCATION_CONFIGS.get((warehouse, "SECUNDARIO"))
+    if not config or not scope or not aisle:
+        raise Http404("Selecciona una bodega, un piso o zona y un pasillo secundario.")
+    rows = secondary_quantity_difference_rows(warehouse, scope, aisle)
+    pdf = build_secondary_quantity_difference_pdf(rows, warehouse, scope, aisle)
+    response = HttpResponse(pdf, content_type="application/pdf")
+    response["Content-Disposition"] = (
+        f'attachment; filename="diferencias_secundario_{slugify(warehouse)}_{scope}_{aisle}.pdf"'
+    )
+    return response
+
+
+@login_required
+def rge_modifications_download_view(request):
+    rows = rge_modification_rows()
+    workbook = Workbook()
+    sheet = workbook.active
+    sheet.title = "Modificar RGE"
+    sheet.append(("Codigo", "Ubicacion", "Cantidad contada"))
+    for row in rows:
+        sheet.append((row["code"], row["location"], row["counted_quantity"]))
+    sheet.freeze_panes = "A2"
+    sheet.auto_filter.ref = f"A1:C{max(sheet.max_row, 1)}"
+    for cell in sheet[1]:
+        cell.font = Font(bold=True, color="FFFFFF")
+        cell.fill = PatternFill("solid", fgColor="087F76")
+        cell.alignment = Alignment(horizontal="center")
+    for column, width in (("A", 24), ("B", 28), ("C", 20)):
+        sheet.column_dimensions[column].width = width
+
+    output = BytesIO()
+    workbook.save(output)
+    workbook.close()
+    response = HttpResponse(
+        output.getvalue(),
+        content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    )
+    response["Content-Disposition"] = 'attachment; filename="ubicaciones_modificar_rge.xlsx"'
+    return response
+
+
+@login_required
+@require_POST
+@transaction.atomic
+def validate_progress_location_view(request):
+    location = _normalize(request.POST.get("ubicacion", ""))
+    field = request.POST.get("campo", "validada")
+    if field not in {"validada", "modificar_rge"}:
+        return JsonResponse({"error": "La acción solicitada no es válida."}, status=400)
+    requested_value = request.POST.get(field, request.POST.get("valor", "false")) == "true"
+    current_rge = CargaRGE.objects.select_for_update().first()
+    if not current_rge or not location:
+        return JsonResponse({"error": "No hay un RGE vigente para validar."}, status=400)
+
+    map_location = Ubicacion.objects.filter(ubicacion__iexact=location).first()
+    config = None
+    if map_location:
+        config = LOCATION_CONFIGS.get(
+            (_normalize(map_location.bodega), _normalize(map_location.tipo))
+        )
+    belongs_to_progress = bool(
+        config
+        and _parse_location(location, config)
+        and DetalleRGE.objects.filter(
+            carga=current_rge, ubicacion__iexact=location
+        ).exists()
+    )
+    if not belongs_to_progress:
+        raise Http404("La ubicación no pertenece al avance vigente.")
+
+    current_count = CargaConteoInventario.objects.first()
+    is_counted = bool(
+        current_count
+        and DetalleConteoInventario.objects.filter(
+            carga=current_count, ubicacion__iexact=location
+        ).exists()
+    )
+    if field == "validada" and requested_value and is_counted:
+        return JsonResponse(
+            {"error": "La ubicación ya está contada y no necesita validación."},
+            status=409,
+        )
+
+    if field == "modificar_rge" and requested_value:
+        expected_codes = {
+            _normalize(code)
+            for code in DetalleRGE.objects.filter(
+                carga=current_rge, ubicacion__iexact=location
+            ).values_list("codigo", flat=True)
+        }
+        found_elsewhere = bool(
+            current_count
+            and expected_codes
+            and DetalleConteoInventario.objects.filter(carga=current_count)
+            .exclude(ubicacion__iexact=location)
+            .annotate(codigo_normalizado=Upper("codigo"))
+            .filter(codigo_normalizado__in=expected_codes)
+            .exists()
+        )
+        if _normalize(map_location.tipo) != "SECUNDARIO" or is_counted or not found_elsewhere:
+            return JsonResponse(
+                {"error": "Solo se puede marcar cuando una ubicación secundaria pendiente tiene productos contados en otro lugar."},
+                status=409,
+            )
+
+    validation = ValidacionUbicacion.objects.filter(
+        carga_rge=current_rge, ubicacion=location
+    ).first()
+    created = False
+    if requested_value:
+        if validation is None:
+            validation = ValidacionUbicacion.objects.create(
+                carga_rge=current_rge,
+                ubicacion=location,
+                validada_por=request.user,
+                validada=field == "validada",
+                modificar_rge=field == "modificar_rge",
+            )
+            created = True
+        else:
+            setattr(validation, field, True)
+            validation.validada_por = request.user
+            validation.save(update_fields=(field, "validada_por"))
+        return JsonResponse({
+            field: True,
+            "created": created,
+            "registrado_por": validation.validada_por.get_full_name()
+            or validation.validada_por.username,
+        })
+
+    if validation is not None:
+        setattr(validation, field, False)
+        if not validation.validada and not validation.modificar_rge:
+            validation.delete()
+        else:
+            validation.validada_por = request.user
+            validation.save(update_fields=(field, "validada_por"))
+    return JsonResponse({field: False})
 
 
 @login_required

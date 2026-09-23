@@ -37,6 +37,9 @@ urlpatterns = [
     path("resumen-por-linea/", views.line_summary_view, name="line_summary"),
     path("avance/general/", views.progress_general_view, name="progress_general"),
     path("avance/", views.progress_view, name="progress"),
+    path("avance/validar-ubicacion/", views.validate_progress_location_view, name="validate_progress_location"),
+    path("avance/secundario/diferencias-cantidad.pdf", views.secondary_quantity_differences_pdf_view, name="secondary_quantity_differences_pdf"),
+    path("avance/secundario/modificaciones-rge.xlsx", views.rge_modifications_download_view, name="rge_modifications_download"),
     path("avance/<str:floor>/ubicaciones-pendientes/", views.pending_locations_download_view, name="pending_locations_download"),
     path("diferencias/seleccionados/", views.selected_codes_view, name="selected_codes"),
 ]
