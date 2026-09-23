@@ -243,6 +243,8 @@ def pending_codes_view(request, pk):
             codigo__in={code["codigo"].upper() for code in codes}
         ).values_list("codigo", "costo")
     }
+    shortage_total = Decimal("0.00")
+    overage_total = Decimal("0.00")
     for code in codes:
         difference = code["diferencia"]
         for field in ("ultimo_conteo", "existencia", "diferencia"):
@@ -263,12 +265,22 @@ def pending_codes_view(request, pk):
                 )
             code["costo"] = format(cost, ".2f")
             code["costo_total"] = format(total, ".2f")
+            if total < 0:
+                shortage_total += total
+            elif total > 0:
+                overage_total += total
+    net_total = shortage_total + overage_total
     return JsonResponse(
         {
             "id": load.pk,
             "linea": f"Línea {load.linea.nlinea} · {load.linea.descripcion}",
             "reconteo": load.numero_reconteo,
             "archivo": load.archivo_nombre,
+            "totales": {
+                "faltante": format(shortage_total, ".2f"),
+                "sobrante": format(overage_total, ".2f"),
+                "diferencia_neta": format(net_total, ".2f"),
+            },
             "codes": codes,
         }
     )

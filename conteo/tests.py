@@ -734,6 +734,10 @@ class DifferenceImportTests(TestCase):
         costs = {item["codigo"]: (item["costo"], item["costo_total"]) for item in codes}
         self.assertEqual(costs["ABC-001"], ("12.35", "-24.69"))
         self.assertEqual(costs["ABC-002"], (None, None))
+        self.assertEqual(
+            codes_response.json()["totales"],
+            {"faltante": "-24.69", "sobrante": "0.00", "diferencia_neta": "-24.69"},
+        )
         first_code = next(item for item in codes if item["codigo"] == "ABC-001")
         second_code = next(item for item in codes if item["codigo"] == "ABC-002")
         self.assertEqual(
@@ -743,6 +747,16 @@ class DifferenceImportTests(TestCase):
         self.assertEqual(
             (second_code["ultimo_conteo"], second_code["existencia"], second_code["diferencia"]),
             ("6", "7", "2"),
+        )
+        CostoProducto.objects.create(
+            carga=cost_load,
+            codigo="ABC-002",
+            costo=Decimal("3.333"),
+        )
+        totals = self.client.get(reverse("conteo:pending_codes", args=[load.pk])).json()["totales"]
+        self.assertEqual(
+            totals,
+            {"faltante": "-24.69", "sobrante": "5.00", "diferencia_neta": "-19.69"},
         )
 
     def test_as400_pdf_is_saved_and_appended_to_each_warehouse_report(self):
@@ -1006,23 +1020,28 @@ class DifferenceImportTests(TestCase):
         sin_be_row = next(row for row in rows if row["base"][3] == "SIN-BE")
         self.assertEqual(sin_be_row["external"], [])
         table = _combined_inventory_table(rows, _report_styles())
-        self.assertEqual(EXTRA_LOCATION_ROWS, 3)
+        self.assertEqual(EXTRA_LOCATION_ROWS, 1)
         self.assertEqual(table._cellvalues[0][-1].getPlainText(), "Firma auditor")
-        first_product_rows = table._cellvalues[3:13]
+        first_product_rows = table._cellvalues[3:11]
         self.assertEqual(
-            [row[5].getPlainText() for row in first_product_rows[-6:]],
-            ["LOURDES", "MIRAMAR", "AGDOSA", "", "", ""],
+            [row[5].getPlainText() for row in first_product_rows[-4:]],
+            ["LOURDES", "MIRAMAR", "AGDOSA", ""],
         )
         response = self.client.get(
             reverse("conteo:recount_warehouse_report", args=[load.pk, "central"])
         )
         self.assertEqual(response.status_code, 200)
-        pdf_text = "\n".join(page.extract_text() for page in PdfReader(BytesIO(response.content)).pages)
+        pdf_reader = PdfReader(BytesIO(response.content))
+        first_page = pdf_reader.pages[0]
+        self.assertLess(float(first_page.mediabox.width), float(first_page.mediabox.height))
+        pdf_text = "\n".join(page.extract_text() for page in pdf_reader.pages)
         for label in ("Tipo ubicación", "RGE", "Contado", "Firma auditor", "Último conteo", "Existencia", "Diferencia", "AGDOSA", "LOURDES", "MIRAMAR", "ABC-001", "SIN-BE", "C-04"):
             self.assertIn(label, pdf_text)
         self.assertEqual(pdf_text.count("Último conteo"), 2)
         self.assertEqual(pdf_text.count("Existencia"), 2)
         self.assertEqual(pdf_text.count("Diferencia"), 2)
+        self.assertIn("Reconteo #1", pdf_text)
+        self.assertIn("Bodega Central", pdf_text)
         self.assertNotIn("RESUMEN DE CANTIDADES CONTADAS POR BODEGA", pdf_text)
         self.assertNotIn("FORMATO DE RECONTEO DE INVENTARIO", pdf_text)
         self.assertNotIn("CANTIDADES POR UBICACIÓN Y BODEGA", pdf_text)

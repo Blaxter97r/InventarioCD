@@ -44,7 +44,18 @@
   <dialog class="review-modal" data-review-modal aria-labelledby="review-modal-title">
     <div class="review-modal__shell">
       <header>
-        <div><p class="count-eyebrow">Selección para reconteo</p><h2 id="review-modal-title" data-review-line>Cargando…</h2><p><span data-review-recount></span> · <span data-review-file></span></p></div>
+        <div class="review-modal__heading">
+          <p class="count-eyebrow">Selección para reconteo</p>
+          <div class="review-line-summary">
+            <h2 id="review-modal-title" data-review-line>Cargando…</h2>
+            <div class="review-line-totals" aria-label="Totales de la línea">
+              <span class="is-shortage"><small>Faltante</small><strong data-review-shortage>—</strong></span>
+              <span class="is-overage"><small>Sobrante</small><strong data-review-overage>—</strong></span>
+              <span class="is-net"><small>Diferencia neta</small><strong data-review-net>—</strong></span>
+            </div>
+          </div>
+          <p><span data-review-recount></span> · <span data-review-file></span></p>
+        </div>
         <button type="button" data-review-close aria-label="Cerrar"><svg viewBox="0 0 24 24"><path d="m6 6 12 12M18 6 6 18" /></svg></button>
       </header>
       <div class="review-tools">
@@ -71,5 +82,5 @@
       </form>
     </div>
   </dialog>
-  <script src="{% static 'conteo/js/recount_review.js' %}?v=20260813-3" defer></script>
+  <script src="{% static 'conteo/js/recount_review.js' %}?v=20260923-1" defer></script>
 {% endblock %}

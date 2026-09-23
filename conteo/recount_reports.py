@@ -7,7 +7,7 @@ import logging
 from django.db.models.functions import Trim, Upper
 from reportlab.lib import colors
 from reportlab.lib.enums import TA_CENTER, TA_LEFT, TA_RIGHT
-from reportlab.lib.pagesizes import A4, landscape
+from reportlab.lib.pagesizes import A4
 from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
 from reportlab.lib.units import mm
 from reportlab.platypus import LongTable, Paragraph, SimpleDocTemplate, TableStyle
@@ -35,7 +35,7 @@ REPORT_WAREHOUSE_LABELS = {
     "central": "CENTRAL",
     "ransa": "RANSA",
 }
-EXTRA_LOCATION_ROWS = 3
+EXTRA_LOCATION_ROWS = 1
 
 
 def _normalize(value):
@@ -297,19 +297,19 @@ def _report_styles():
     return {
         "cell": ParagraphStyle(
             "RecountCell", parent=styles["Normal"], fontName="Helvetica",
-            fontSize=6.5, leading=8, textColor=colors.HexColor("#263D47"), alignment=TA_LEFT,
+            fontSize=5.2, leading=6.3, textColor=colors.HexColor("#263D47"), alignment=TA_LEFT,
         ),
         "cell_center": ParagraphStyle(
             "RecountCellCenter", parent=styles["Normal"], fontName="Helvetica",
-            fontSize=6.5, leading=8, textColor=colors.HexColor("#263D47"), alignment=TA_CENTER,
+            fontSize=5.2, leading=6.3, textColor=colors.HexColor("#263D47"), alignment=TA_CENTER,
         ),
         "cell_right": ParagraphStyle(
             "RecountCellRight", parent=styles["Normal"], fontName="Helvetica",
-            fontSize=6.5, leading=8, textColor=colors.HexColor("#263D47"), alignment=TA_RIGHT,
+            fontSize=5.2, leading=6.3, textColor=colors.HexColor("#263D47"), alignment=TA_RIGHT,
         ),
         "summary_header": ParagraphStyle(
             "RecountSummaryHeader", parent=styles["Normal"], fontName="Helvetica-Bold",
-            fontSize=7, leading=8, textColor=colors.white, alignment=TA_CENTER,
+            fontSize=5.2, leading=6.3, textColor=colors.white, alignment=TA_CENTER,
         ),
     }
 
@@ -404,8 +404,8 @@ def _combined_inventory_table(rows, styles):
 
     table = LongTable(
         data,
-        colWidths=(12 * mm, 15 * mm, 14 * mm, 25 * mm, 60 * mm, 25 * mm,
-                   28 * mm, 35 * mm, 20 * mm, 20 * mm, 25 * mm),
+        colWidths=(8 * mm, 10 * mm, 9 * mm, 19 * mm, 41 * mm, 18 * mm,
+                   20 * mm, 26 * mm, 13 * mm, 14 * mm, 22 * mm),
         repeatRows=2,
         hAlign="CENTER",
     )
@@ -413,7 +413,7 @@ def _combined_inventory_table(rows, styles):
         ("BACKGROUND", (0, 0), (-1, 1), colors.HexColor("#087F76")),
         ("TEXTCOLOR", (0, 0), (-1, 1), colors.white),
         ("FONTNAME", (0, 0), (-1, 1), "Helvetica-Bold"),
-        ("FONTSIZE", (0, 0), (-1, 1), 7),
+        ("FONTSIZE", (0, 0), (-1, 1), 5.2),
         ("ALIGN", (0, 0), (-1, 1), "CENTER"),
         ("SPAN", (0, 0), (0, 1)),
         ("SPAN", (1, 0), (1, 1)),
@@ -459,13 +459,14 @@ def _combined_inventory_table(rows, styles):
 
 def _draw_page_footer(canvas, document):
     canvas.saveState()
-    page_width = landscape(A4)[0]
+    page_width = document.pagesize[0]
     canvas.setStrokeColor(colors.HexColor("#D7E1E3"))
     canvas.setLineWidth(0.4)
     canvas.line(document.leftMargin, 12 * mm, page_width - document.rightMargin, 12 * mm)
     canvas.setFillColor(colors.HexColor("#718087"))
     canvas.setFont("Helvetica", 7)
     canvas.drawString(document.leftMargin, 8 * mm, "Inventario 2026")
+    canvas.drawCentredString(page_width / 2, 8 * mm, document.recount_label)
     canvas.drawRightString(page_width - document.rightMargin, 8 * mm, f"Página {canvas.getPageNumber()}")
     canvas.restoreState()
 
@@ -489,9 +490,13 @@ def build_recount_pdf(load, warehouse_key):
     styles = _report_styles()
     output = BytesIO()
     document = SimpleDocTemplate(
-        output, pagesize=landscape(A4), leftMargin=8 * mm, rightMargin=8 * mm,
+        output, pagesize=A4, leftMargin=5 * mm, rightMargin=5 * mm,
         topMargin=8 * mm, bottomMargin=17 * mm,
         title="Formato de reconteo de inventario", author="Inventario 2026",
+    )
+    document.recount_label = (
+        f"Línea {load.linea.nlinea} · Reconteo #{load.numero_reconteo} · "
+        f"{WAREHOUSES[warehouse_key]}"
     )
     story = [_combined_inventory_table(rows, styles)]
     document.build(story, onFirstPage=_draw_page_footer, onLaterPages=_draw_page_footer)

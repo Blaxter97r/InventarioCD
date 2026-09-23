@@ -15,6 +15,9 @@
   const saveButton = dialog.querySelector("[data-review-save]");
   const finalizeButton = dialog.querySelector("[data-finalize-line]");
   const loading = dialog.querySelector("[data-review-loading]");
+  const shortageTotal = dialog.querySelector("[data-review-shortage]");
+  const overageTotal = dialog.querySelector("[data-review-overage]");
+  const netTotal = dialog.querySelector("[data-review-net]");
 
   const escapeHtml = (value) => String(value ?? "").replace(/[&<>'"]/g, (character) => ({
     "&": "&amp;", "<": "&lt;", ">": "&gt;", "'": "&#39;", '"': "&quot;",
@@ -102,6 +105,10 @@
     sort.value = "default";
     minTotal.value = "";
     maxTotal.value = "";
+    shortageTotal.textContent = "—";
+    overageTotal.textContent = "—";
+    netTotal.textContent = "—";
+    netTotal.classList.remove("is-negative", "is-positive");
     saveButton.disabled = true;
     if (typeof dialog.showModal === "function") dialog.showModal();
     else dialog.setAttribute("open", "");
@@ -112,6 +119,10 @@
       dialog.querySelector("[data-review-line]").textContent = data.linea;
       dialog.querySelector("[data-review-recount]").textContent = `Carga #${data.reconteo}`;
       dialog.querySelector("[data-review-file]").textContent = data.archivo;
+      shortageTotal.textContent = formatUsd(data.totales.faltante);
+      overageTotal.textContent = formatUsd(data.totales.sobrante);
+      netTotal.textContent = formatUsd(data.totales.diferencia_neta);
+      netTotal.classList.add(Number(data.totales.diferencia_neta) < 0 ? "is-negative" : "is-positive");
       form.action = button.dataset.saveUrl;
       finalizeButton.formAction = button.dataset.finalizeUrl;
       renderCodes(data.codes);

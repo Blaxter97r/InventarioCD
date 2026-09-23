@@ -282,6 +282,17 @@
 .review-modal header { display: flex; align-items: flex-start; justify-content: space-between; gap: 20px; padding: 23px 25px 18px; border-bottom: 1px solid var(--count-line); }
 .review-modal header h2 { margin: 0; color: var(--count-navy); font-family: "Manrope", sans-serif; font-size: 20px; }
 .review-modal header p:last-child { margin: 4px 0 0; color: #819096; font-size: 9px; }
+.review-modal__heading { min-width: 0; flex: 1; }
+.review-line-summary { display: flex; align-items: center; flex-wrap: wrap; gap: 12px 22px; }
+.review-line-totals { display: flex; align-items: stretch; flex-wrap: wrap; gap: 7px; }
+.review-line-totals > span { min-width: 88px; padding: 7px 10px; border: 1px solid #dfe8e8; border-radius: 9px; background: #f7fafa; }
+.review-line-totals small, .review-line-totals strong { display: block; }
+.review-line-totals small { margin-bottom: 2px; color: #7b898e; font-size: 7px; font-weight: 800; letter-spacing: .45px; text-transform: uppercase; }
+.review-line-totals strong { color: var(--count-navy); font-family: "Manrope", sans-serif; font-size: 12px; }
+.review-line-totals .is-shortage { border-color: #f0cccc; background: #fff3f3; }
+.review-line-totals .is-shortage strong, .review-line-totals .is-net strong.is-negative { color: #a53535; }
+.review-line-totals .is-overage { border-color: #c9e7df; background: #edf9f6; }
+.review-line-totals .is-overage strong, .review-line-totals .is-net strong.is-positive { color: #13725f; }
 .review-modal header > button { display: grid; width: 34px; height: 34px; place-items: center; padding: 0; border: 0; border-radius: 8px; color: #78878e; background: #f1f5f5; cursor: pointer; }
 .review-modal header button svg { width: 16px; fill: none; stroke: currentColor; stroke-linecap: round; stroke-width: 1.8; }
 .review-tools { display: flex; min-height: 58px; align-items: flex-end; flex-wrap: wrap; gap: 10px 14px; padding: 10px 25px; background: #f8fafa; }
@@ -550,6 +561,9 @@
   .queue-file { grid-column: auto; }
   .queue-actions { justify-content: flex-start; }
   .review-modal header, .review-tools { padding-inline: 15px; }
+  .review-line-summary { align-items: flex-start; flex-direction: column; gap: 9px; }
+  .review-line-totals { width: 100%; }
+  .review-line-totals > span { min-width: 0; flex: 1 1 85px; }
   .review-tools { align-items: stretch; flex-wrap: wrap; }
   .review-search { order: 3; max-width: none; flex-basis: 100%; }
   .review-filter { flex: 1 1 130px; }
