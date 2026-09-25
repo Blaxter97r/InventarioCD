@@ -128,6 +128,19 @@ def _build_reconciliation_data(
                 products_by_location[normalized].add(_normalize(code))
 
     product_codes = {code for products in products_by_location.values() for code in products}
+    rge_locations_by_code = {}
+    if current_rge and product_codes:
+        rge_rows = (
+            DetalleRGE.objects.filter(carga=current_rge)
+            .annotate(codigo_normalizado=Upper("codigo"))
+            .filter(codigo_normalizado__in=product_codes)
+            .values_list("codigo_normalizado", "ubicacion")
+        )
+        for code, location in rge_rows:
+            rge_locations_by_code.setdefault(_normalize(code), set()).add(
+                _normalize(location)
+            )
+
     counted_by_code = {}
     if current_load and product_codes:
         counted_rows = (
@@ -154,6 +167,11 @@ def _build_reconciliation_data(
                 "code": code,
                 "expected_location": location,
                 "counted_locations": other_locations,
+                "unexpected_counted_locations": [
+                    counted_location
+                    for counted_location in other_locations
+                    if counted_location not in rge_locations_by_code.get(code, set())
+                ],
                 "counted_elsewhere": bool(other_locations),
                 "counted_here": counted_here,
             })

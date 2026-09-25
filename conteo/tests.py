@@ -139,11 +139,17 @@ class DifferenceAccessTests(TestCase):
         Ubicacion.objects.create(
             ubicacion="A01I-B02", bodega="BODEGA CENTRAL", sector="1", tipo="PRIMARIO"
         )
+        Ubicacion.objects.create(
+            ubicacion="A01I-B03", bodega="BODEGA CENTRAL", sector="1", tipo="PRIMARIO"
+        )
         load = CargaConteoInventario.objects.create(
             archivo_nombre="snapshot.xlsx", cargado_por=self.admin, total_registros=1
         )
         DetalleConteoInventario.objects.create(
             carga=load, bodega="CENTRAL", ubicacion="A01I-B01", codigo="ABC", cantidad=1
+        )
+        DetalleConteoInventario.objects.create(
+            carga=load, bodega="CENTRAL", ubicacion="A01I-B03", codigo="ABC", cantidad=1
         )
         rge_load = CargaRGE.objects.create(
             archivo_nombre="rge.xlsx",
@@ -162,6 +168,11 @@ class DifferenceAccessTests(TestCase):
             codigo="ABC",
             ubicacion="A01I-B02",
         )
+        DetalleRGE.objects.create(
+            carga=rge_load,
+            codigo="ABC",
+            ubicacion="A01I-B03",
+        )
         self.client.force_login(self.user)
 
         response = self.client.get(reverse("conteo:progress"), {"piso": "A"})
@@ -171,7 +182,7 @@ class DifferenceAccessTests(TestCase):
         locations = {item["code"]: item for item in body["locations"]}
         self.assertEqual(body["name"], "B")
         self.assertEqual(body["pending"], 1)
-        self.assertEqual(len(body["locations"]), 2)
+        self.assertEqual(len(body["locations"]), 3)
         self.assertTrue(locations["A01I-B01"]["counted"])
         self.assertEqual(locations["A01I-B01"]["status"], "counted")
         self.assertFalse(locations["A01I-B02"]["counted"])
@@ -182,6 +193,10 @@ class DifferenceAccessTests(TestCase):
         self.assertEqual(pending_location["found_elsewhere"], 1)
         self.assertEqual(
             pending_location["products"][0]["counted_locations"],
+            ["A01I-B01", "A01I-B03"],
+        )
+        self.assertEqual(
+            pending_location["products"][0]["unexpected_counted_locations"],
             ["A01I-B01"],
         )
         self.assertEqual(pending_location["products"][0]["expected_location"], "A01I-B02")

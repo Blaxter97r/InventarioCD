@@ -168,9 +168,14 @@
       const locations = document.createElement("div");
       locations.className = "progress-reconciliation__locations";
       if (product.counted_locations.length) {
+        const unexpectedLocations = new Set(product.unexpected_counted_locations || []);
         product.counted_locations.forEach((value) => {
           const tag = document.createElement("span");
           tag.textContent = value;
+          tag.classList.toggle("is-unexpected", unexpectedLocations.has(value));
+          if (unexpectedLocations.has(value)) {
+            tag.title = "Esta ubicación no está asignada al producto en el RGE";
+          }
           locations.append(tag);
         });
       } else {
