@@ -359,10 +359,22 @@ def build_code_differences_dashboard(
                 codes_by_location[normalized_location].add(normalized_code)
 
     counted_codes = set()
-    if current_load:
+    eligible_count_locations = {
+        _normalize(location)
+        for location, map_warehouse, map_type in Ubicacion.objects.values_list(
+            "ubicacion", "bodega", "tipo"
+        )
+        if (
+            _normalize(map_warehouse),
+            _normalize(map_type),
+        ) == (warehouse, location_type)
+    }
+    if current_load and eligible_count_locations:
         counted_codes = {
             _normalize(value)
             for value in DetalleConteoInventario.objects.filter(carga=current_load)
+            .annotate(ubicacion_normalizada=Upper("ubicacion"))
+            .filter(ubicacion_normalizada__in=eligible_count_locations)
             .values_list("codigo", flat=True).order_by().distinct()
             if _normalize(value)
         }

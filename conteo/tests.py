@@ -696,11 +696,20 @@ class DifferenceAccessTests(TestCase):
         self.assertEqual(pedregal["types"][0]["name"], "Primario")
         self.assertContains(response, "Bodega Pedregal")
 
-    def test_progress_differences_groups_missing_rge_codes_by_primary_location(self):
+    def test_progress_differences_only_counts_same_warehouse_and_location_type(self):
         for location in ("A01I-B01", "A01I-B02"):
             Ubicacion.objects.create(
                 ubicacion=location, bodega="BODEGA CENTRAL", sector="1", tipo="PRIMARIO"
             )
+        Ubicacion.objects.create(
+            ubicacion="A02I-B01", bodega="BODEGA CENTRAL", sector="2", tipo="PRIMARIO"
+        )
+        Ubicacion.objects.create(
+            ubicacion="E08-045Y", bodega="BODEGA CENTRAL", sector="8", tipo="SECUNDARIO"
+        )
+        Ubicacion.objects.create(
+            ubicacion="R-08-18-03", bodega="RANSA", sector="R", tipo="PRIMARIO"
+        )
         rge_load = CargaRGE.objects.create(
             archivo_nombre="rge.xlsx", cargado_por=self.admin,
         )
@@ -713,9 +722,15 @@ class DifferenceAccessTests(TestCase):
         count_load = CargaConteoInventario.objects.create(
             archivo_nombre="conteo.xlsx", cargado_por=self.admin,
         )
-        DetalleConteoInventario.objects.create(
-            carga=count_load, bodega="CENTRAL", ubicacion="OTRA", codigo="contado", cantidad=1,
-        )
+        for warehouse, location, code in (
+            ("CENTRAL", "A02I-B01", "CONTADO"),
+            ("CENTRAL", "E08-045Y", "FALTA-DOS"),
+            ("RANSA", "R-08-18-03", "FALTA-UNO"),
+        ):
+            DetalleConteoInventario.objects.create(
+                carga=count_load, bodega=warehouse, ubicacion=location,
+                codigo=code, cantidad=1,
+            )
         self.client.force_login(self.user)
 
         selector = self.client.get(reverse("conteo:progress_differences"))
