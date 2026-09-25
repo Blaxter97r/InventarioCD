@@ -358,7 +358,7 @@ class DifferenceAccessTests(TestCase):
             differences_page, reverse("conteo:secondary_quantity_differences_pdf")
         )
 
-    def test_secondary_modify_rge_flag_exports_actual_counted_locations(self):
+    def test_secondary_modify_rge_flag_exports_rge_codes_at_zero(self):
         source = "E08-045Y"
         actual = "E08-046Y"
         for location in (source, actual):
@@ -373,6 +373,9 @@ class DifferenceAccessTests(TestCase):
         )
         DetalleRGE.objects.create(
             carga=rge_load, codigo="MOVER-001", ubicacion=source, cantidad=6
+        )
+        DetalleRGE.objects.create(
+            carga=rge_load, codigo="MOVER-002", ubicacion=source, cantidad=3
         )
         count_load = CargaConteoInventario.objects.create(
             archivo_nombre="conteo.xlsx", cargado_por=self.admin
@@ -417,7 +420,8 @@ class DifferenceAccessTests(TestCase):
         workbook.close()
         self.assertEqual(rows, [
             ("Codigo", "Ubicacion", "Cantidad contada"),
-            ("MOVER-001", actual, 6),
+            ("MOVER-001", source, 0),
+            ("MOVER-002", source, 0),
         ])
 
         response = self.client.post(
@@ -476,6 +480,15 @@ class DifferenceAccessTests(TestCase):
         validation = ValidacionUbicacion.objects.get(ubicacion="E08-045Y")
         self.assertFalse(validation.validada)
         self.assertTrue(validation.modificar_rge)
+
+        download = self.client.get(reverse("conteo:rge_modifications_download"))
+        workbook = load_workbook(BytesIO(download.content), read_only=True, data_only=True)
+        rows = list(workbook.active.iter_rows(values_only=True))
+        workbook.close()
+        self.assertEqual(rows, [
+            ("Codigo", "Ubicacion", "Cantidad contada"),
+            ("NO-LOCALIZADO", "E08-045Y", 0),
+        ])
 
     def test_progress_only_includes_central_primary_mezzanine_locations(self):
         Ubicacion.objects.create(

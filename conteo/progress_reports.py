@@ -157,8 +157,7 @@ def build_secondary_quantity_difference_pdf(rows, warehouse, scope, aisle):
 
 def rge_modification_rows():
     current_rge = CargaRGE.objects.first()
-    current_count = CargaConteoInventario.objects.first()
-    if not current_rge or not current_count:
+    if not current_rge:
         return []
 
     secondary_locations = {
@@ -177,32 +176,20 @@ def rge_modification_rows():
     if not marked_locations:
         return []
 
-    expected_locations_by_code = defaultdict(set)
-    expected_rows = (
+    rge_rows = (
         DetalleRGE.objects.filter(carga=current_rge)
         .annotate(ubicacion_normalizada=Upper("ubicacion"))
         .filter(ubicacion_normalizada__in=marked_locations)
         .values_list("codigo", "ubicacion_normalizada")
     )
-    for code, location in expected_rows:
-        expected_locations_by_code[_normalize(code)].add(_normalize(location))
-
-    counted = defaultdict(Decimal)
-    count_rows = (
-        DetalleConteoInventario.objects.filter(carga=current_count)
-        .annotate(codigo_normalizado=Upper("codigo"))
-        .filter(codigo_normalizado__in=set(expected_locations_by_code))
-        .values_list("codigo_normalizado", "ubicacion", "cantidad")
-    )
-    for code, location, quantity in count_rows:
-        normalized_location = _normalize(location)
-        if normalized_location in expected_locations_by_code[code]:
-            continue
-        counted[(code, normalized_location)] += quantity
-
+    expected_rows = {
+        (_normalize(code), _normalize(location))
+        for code, location in rge_rows
+        if _normalize(code)
+    }
     return [
-        {"code": code, "location": location, "counted_quantity": quantity}
-        for (code, location), quantity in sorted(counted.items())
+        {"code": code, "location": location, "counted_quantity": Decimal(0)}
+        for code, location in sorted(expected_rows)
     ]
 
 
