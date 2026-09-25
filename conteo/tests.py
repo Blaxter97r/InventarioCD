@@ -433,15 +433,21 @@ class DifferenceAccessTests(TestCase):
         self.assertTrue(validation.validada)
         self.assertTrue(validation.modificar_rge)
 
-    def test_modify_rge_rejects_primary_or_location_without_products_elsewhere(self):
+    def test_modify_rge_rejects_primary_and_accepts_unlocated_secondary_product(self):
         Ubicacion.objects.create(
             ubicacion="A01I-B01", bodega="BODEGA CENTRAL", sector="1", tipo="PRIMARIO"
+        )
+        Ubicacion.objects.create(
+            ubicacion="E08-045Y", bodega="BODEGA CENTRAL", sector="8", tipo="SECUNDARIO"
         )
         rge_load = CargaRGE.objects.create(
             archivo_nombre="rge.xlsx", cargado_por=self.admin
         )
         DetalleRGE.objects.create(
             carga=rge_load, codigo="ABC", ubicacion="A01I-B01", cantidad=1
+        )
+        DetalleRGE.objects.create(
+            carga=rge_load, codigo="NO-LOCALIZADO", ubicacion="E08-045Y", cantidad=1
         )
         self.client.force_login(self.user)
 
@@ -456,6 +462,20 @@ class DifferenceAccessTests(TestCase):
 
         self.assertEqual(response.status_code, 409)
         self.assertFalse(ValidacionUbicacion.objects.exists())
+
+        response = self.client.post(
+            reverse("conteo:validate_progress_location"),
+            {
+                "ubicacion": "E08-045Y",
+                "campo": "modificar_rge",
+                "modificar_rge": "true",
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        validation = ValidacionUbicacion.objects.get(ubicacion="E08-045Y")
+        self.assertFalse(validation.validada)
+        self.assertTrue(validation.modificar_rge)
 
     def test_progress_only_includes_central_primary_mezzanine_locations(self):
         Ubicacion.objects.create(

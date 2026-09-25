@@ -147,7 +147,7 @@
     validationForm.hidden = location.counted;
     validationCheckbox.checked = location.validated;
     validationCheckbox.disabled = false;
-    const canModifyRge = locationType === "SECUNDARIO" && !location.counted && location.found_elsewhere > 0;
+    const canModifyRge = locationType === "SECUNDARIO" && !location.counted;
     rgeModificationControl.hidden = !canModifyRge;
     rgeModificationCheckbox.checked = location.modify_rge;
     rgeModificationCheckbox.disabled = false;

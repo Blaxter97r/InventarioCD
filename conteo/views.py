@@ -909,24 +909,9 @@ def validate_progress_location_view(request):
         )
 
     if field == "modificar_rge" and requested_value:
-        expected_codes = {
-            _normalize(code)
-            for code in DetalleRGE.objects.filter(
-                carga=current_rge, ubicacion__iexact=location
-            ).values_list("codigo", flat=True)
-        }
-        found_elsewhere = bool(
-            current_count
-            and expected_codes
-            and DetalleConteoInventario.objects.filter(carga=current_count)
-            .exclude(ubicacion__iexact=location)
-            .annotate(codigo_normalizado=Upper("codigo"))
-            .filter(codigo_normalizado__in=expected_codes)
-            .exists()
-        )
-        if _normalize(map_location.tipo) != "SECUNDARIO" or is_counted or not found_elsewhere:
+        if _normalize(map_location.tipo) != "SECUNDARIO" or is_counted:
             return JsonResponse(
-                {"error": "Solo se puede marcar cuando una ubicación secundaria pendiente tiene productos contados en otro lugar."},
+                {"error": "Solo se puede marcar cuando una ubicación secundaria está pendiente de conteo."},
                 status=409,
             )
 

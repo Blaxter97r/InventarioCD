@@ -123,7 +123,7 @@
               <form class="progress-validation" data-validation-form>
                 {% csrf_token %}
                 <div class="progress-validation__option"><label><input type="checkbox" data-validation-checkbox><span aria-hidden="true">✓</span><strong>Ubicación validada</strong></label><p data-validation-help>Marca este check cuando la ubicación ya fue revisada y se tomó una decisión. Se sumará al avance.</p></div>
-                <div class="progress-validation__option is-rge" data-rge-modification-control hidden><label><input type="checkbox" data-rge-modification-checkbox><span aria-hidden="true">✓</span><strong>Modificar RGE</strong></label><p>El producto fue contado correctamente en otra ubicación y debe corregirse en el RGE.</p></div>
+                <div class="progress-validation__option is-rge" data-rge-modification-control hidden><label><input type="checkbox" data-rge-modification-checkbox><span aria-hidden="true">✓</span><strong>Modificar RGE</strong></label><p>La ubicación física no coincide con el RGE o el producto no está presente y requiere revisión.</p></div>
                 <small data-validation-feedback aria-live="polite"></small>
               </form>
               <section class="progress-reconciliation__metrics">
