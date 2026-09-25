@@ -794,6 +794,36 @@ def reset_differences_view(request):
     )
 
 
+@admin_required
+def reset_progress_statuses_view(request):
+    confirmation_phrase = "REINICIAR ESTADOS DE AVANCE"
+    if request.method == "POST":
+        if request.POST.get("confirmacion", "").strip() != confirmation_phrase:
+            messages.error(
+                request, "Escribe REINICIAR ESTADOS DE AVANCE para confirmar."
+            )
+        else:
+            status_count = ValidacionUbicacion.objects.count()
+            ValidacionUbicacion.objects.all().delete()
+            messages.success(
+                request,
+                f"Se reiniciaron {status_count} estados de validación del avance.",
+            )
+            return redirect("usuarios:inicio")
+    return render(
+        request,
+        "conteo/reset_progress_statuses.html",
+        {
+            "status_count": ValidacionUbicacion.objects.count(),
+            "validated_count": ValidacionUbicacion.objects.filter(validada=True).count(),
+            "modify_rge_count": ValidacionUbicacion.objects.filter(
+                modificar_rge=True
+            ).count(),
+            "confirmation_phrase": confirmation_phrase,
+        },
+    )
+
+
 @login_required
 def progress_general_view(request):
     context = build_progress_dashboard(summary_only=True)

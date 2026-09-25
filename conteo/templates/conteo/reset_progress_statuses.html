@@ -1,0 +1,37 @@
+{% extends "layouts/app_shell.html" %}
+{% load static %}
+{% block title %}Reiniciar estados de avance | Inventario 2026{% endblock %}
+{% block page_name %}Administración · Reiniciar estados de avance{% endblock %}
+{% block extra_css %}<link rel="stylesheet" href="{% static 'conteo/css/reset_differences.css' %}?v=20260914-1" />{% endblock %}
+{% block page_content %}
+  <main class="reset-page">
+    <a class="reset-back" href="{% url 'usuarios:inicio' %}">← Volver al panel principal</a>
+    <div class="reset-heading">
+      <p>Herramienta de pruebas · Solo administradores</p>
+      <h1>Reiniciar estados de avance</h1>
+      <span>Devuelve las ubicaciones revisadas a su estado inicial para comenzar una nueva prueba.</span>
+    </div>
+
+    <section class="reset-counts" aria-label="Estados que se eliminarán">
+      <article><strong>{{ status_count }}</strong><span>Ubicaciones con estados guardados</span></article>
+      <article><strong>{{ validated_count }}</strong><span>Ubicaciones validadas</span></article>
+      <article><strong>{{ modify_rge_count }}</strong><span>Marcas de Modificar RGE</span></article>
+    </section>
+
+    <section class="reset-details">
+      <div><h2>Se borrarán</h2><p>Las validaciones manuales de ubicaciones y todas las marcas de Modificar RGE guardadas en Avance.</p></div>
+      <div><h2>Se conservarán</h2><p>El mapa de ubicaciones, RGE, conteos de inventario, diferencias, reconteos, usuarios y demás archivos cargados.</p></div>
+    </section>
+
+    {% if status_count %}
+      <form class="reset-confirm" method="post">
+        {% csrf_token %}
+        <label for="reset-confirmation">Para confirmar, escribe <strong>{{ confirmation_phrase }}</strong></label>
+        <input id="reset-confirmation" name="confirmacion" type="text" required autocomplete="off" spellcheck="false" value="{{ request.POST.confirmacion|default:'' }}" />
+        <div class="reset-actions"><button type="submit">Reiniciar estados</button><a href="{% url 'usuarios:inicio' %}">Cancelar</a></div>
+      </form>
+    {% else %}
+      <div class="reset-empty">No hay estados de avance guardados para reiniciar.</div>
+    {% endif %}
+  </main>
+{% endblock %}

@@ -2030,6 +2030,70 @@ class DifferenceImportTests(TestCase):
             403,
         )
 
+    def test_admin_can_reset_progress_statuses_without_erasing_sources(self):
+        rge_load = CargaRGE.objects.create(
+            archivo_nombre="rge.xlsx", cargado_por=self.admin
+        )
+        for location in ("E08-045Y", "E08-046Y"):
+            Ubicacion.objects.create(
+                ubicacion=location, bodega="BODEGA CENTRAL",
+                sector="8", tipo="SECUNDARIO",
+            )
+            DetalleRGE.objects.create(
+                carga=rge_load, codigo=location, ubicacion=location
+            )
+        ValidacionUbicacion.objects.create(
+            carga_rge=rge_load, ubicacion="E08-045Y",
+            validada_por=self.admin, validada=True, modificar_rge=True,
+        )
+        ValidacionUbicacion.objects.create(
+            carga_rge=rge_load, ubicacion="E08-046Y",
+            validada_por=self.admin, validada=False, modificar_rge=True,
+        )
+
+        home = self.client.get(reverse("usuarios:inicio"))
+        self.assertContains(home, "Reiniciar estados de avance")
+        preview = self.client.get(reverse("conteo:reset_progress_statuses"))
+        self.assertEqual(preview.context["status_count"], 2)
+        self.assertEqual(preview.context["validated_count"], 1)
+        self.assertEqual(preview.context["modify_rge_count"], 2)
+
+        self.client.post(
+            reverse("conteo:reset_progress_statuses"),
+            {"confirmacion": "incorrecto"},
+        )
+        self.assertEqual(ValidacionUbicacion.objects.count(), 2)
+
+        response = self.client.post(
+            reverse("conteo:reset_progress_statuses"),
+            {"confirmacion": "REINICIAR ESTADOS DE AVANCE"},
+        )
+        self.assertRedirects(response, reverse("usuarios:inicio"))
+        self.assertFalse(ValidacionUbicacion.objects.exists())
+        self.assertEqual(DetalleRGE.objects.count(), 2)
+        self.assertEqual(Ubicacion.objects.count(), 2)
+
+    def test_non_admin_cannot_reset_progress_statuses(self):
+        viewer = get_user_model().objects.create_user(
+            username="visor-estados", password="clave-segura"
+        )
+        self.client.force_login(viewer)
+        self.assertNotContains(
+            self.client.get(reverse("usuarios:inicio")),
+            "Reiniciar estados de avance",
+        )
+        self.assertEqual(
+            self.client.get(reverse("conteo:reset_progress_statuses")).status_code,
+            403,
+        )
+        self.assertEqual(
+            self.client.post(
+                reverse("conteo:reset_progress_statuses"),
+                {"confirmacion": "REINICIAR ESTADOS DE AVANCE"},
+            ).status_code,
+            403,
+        )
+
     def test_manager_cannot_delete_pending_recount(self):
         workbook = make_difference_workbook(
             [("1", "2", "ABC-001", 10, 8, -2, "A-01", "", "", "", date(2026, 8, 8), time(14, 30))]

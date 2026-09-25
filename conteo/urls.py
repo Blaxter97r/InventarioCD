@@ -35,6 +35,7 @@ urlpatterns = [
         name="recount_warehouse_report",
     ),
     path("resumen-por-linea/", views.line_summary_view, name="line_summary"),
+    path("avance/reiniciar-estados/", views.reset_progress_statuses_view, name="reset_progress_statuses"),
     path("avance/general/", views.progress_general_view, name="progress_general"),
     path("avance/diferencias/", views.progress_differences_view, name="progress_differences"),
     path("avance/", views.progress_view, name="progress"),
