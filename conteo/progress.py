@@ -425,6 +425,84 @@ def build_code_differences_dashboard(
     }
 
 
+def _build_general_progress_summary(
+    current_load, current_rge, rge_locations, expected_by_config, map_locations
+):
+    expected_by_group = {
+        key: set(locations) for key, locations in expected_by_config.items()
+    }
+    for location, warehouse, location_type in Ubicacion.objects.values_list(
+        "ubicacion", "bodega", "tipo"
+    ).iterator(chunk_size=2000):
+        normalized_location = _normalize(location)
+        key = (_normalize(warehouse), _normalize(location_type))
+        if key not in LOCATION_CONFIGS and normalized_location in rge_locations:
+            expected_by_group.setdefault(key, set()).add(normalized_location)
+
+    all_expected = set().union(*expected_by_group.values()) if expected_by_group else set()
+    counted_locations = set()
+    if current_load and all_expected:
+        counted_locations = {
+            _normalize(value)
+            for value in DetalleConteoInventario.objects.filter(carga=current_load)
+            .annotate(ubicacion_normalizada=Upper("ubicacion"))
+            .filter(ubicacion_normalizada__in=all_expected)
+            .values_list("ubicacion_normalizada", flat=True).order_by().distinct()
+        }
+
+    validated_locations = set()
+    if current_rge and all_expected:
+        validated_locations = {
+            _normalize(value)
+            for value in ValidacionUbicacion.objects.filter(
+                carga_rge=current_rge,
+                ubicacion__in=all_expected,
+                validada=True,
+            ).values_list("ubicacion", flat=True)
+        } - counted_locations
+
+    configured_warehouses = list(dict.fromkeys(key[0] for key in LOCATION_CONFIGS))
+    extra_warehouses = sorted(
+        {key[0] for key in expected_by_group} - set(configured_warehouses)
+    )
+    warehouse_cards = []
+    for warehouse in [*configured_warehouses, *extra_warehouses]:
+        configured_types = [
+            key[1] for key in LOCATION_CONFIGS if key[0] == warehouse
+        ]
+        extra_types = sorted(
+            {key[1] for key in expected_by_group if key[0] == warehouse}
+            - set(configured_types)
+        )
+        type_cards = []
+        warehouse_expected = set()
+        for location_type in [*configured_types, *extra_types]:
+            locations = expected_by_group.get((warehouse, location_type), set())
+            warehouse_expected.update(locations)
+            type_cards.append({
+                "name": location_type.title(),
+                "value": location_type,
+                **_progress_summary(
+                    locations, counted_locations, validated_locations
+                ),
+            })
+        warehouse_cards.append({
+            "name": warehouse.title(),
+            "value": warehouse,
+            "types": type_cards,
+            **_progress_summary(
+                warehouse_expected, counted_locations, validated_locations
+            ),
+        })
+
+    return {
+        "current_load": current_load,
+        "warehouse_cards": warehouse_cards,
+        "map_only_total": len(map_locations - rge_locations) if current_rge else 0,
+        "rge_only_total": len(rge_locations - map_locations),
+    }
+
+
 def build_progress_dashboard(selected_floor="", selected_warehouse="", selected_type="", *, summary_only=False):
     current_load = CargaConteoInventario.objects.first()
     current_rge = CargaRGE.objects.first()
@@ -437,6 +515,15 @@ def build_progress_dashboard(selected_floor="", selected_warehouse="", selected_
         }
 
     expected_by_config, invalid_by_config, map_locations = _configured_locations(rge_locations)
+    if summary_only:
+        return _build_general_progress_summary(
+            current_load,
+            current_rge,
+            rge_locations,
+            expected_by_config,
+            map_locations,
+        )
+
     all_expected = set().union(*(set(items) for items in expected_by_config.values()))
     counted_locations = set()
     if current_load and all_expected:
@@ -487,14 +574,6 @@ def build_progress_dashboard(selected_floor="", selected_warehouse="", selected_
             "types": type_cards,
             **_progress_summary(warehouse_expected, counted_locations, validated_locations),
         })
-
-    if summary_only:
-        return {
-            "current_load": current_load,
-            "warehouse_cards": warehouse_cards,
-            "map_only_total": len(map_locations - rge_locations) if current_rge else 0,
-            "rge_only_total": len(rge_locations - map_locations),
-        }
 
     requested_key = (_normalize(selected_warehouse), _normalize(selected_type))
     key = requested_key if requested_key in LOCATION_CONFIGS else ("BODEGA CENTRAL", "PRIMARIO")

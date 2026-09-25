@@ -650,6 +650,37 @@ class DifferenceAccessTests(TestCase):
         primary = response.context["warehouse_cards"][0]["types"][0]
         self.assertEqual((primary["expected"], primary["counted"], primary["percentage"]), (2, 1, 50))
 
+    def test_general_progress_includes_new_warehouse_from_map_and_rge(self):
+        Ubicacion.objects.create(
+            ubicacion="P-01", bodega="BODEGA PEDREGAL", sector="P", tipo="PRIMARIO"
+        )
+        rge_load = CargaRGE.objects.create(
+            archivo_nombre="rge-pedregal.xlsx", cargado_por=self.admin,
+        )
+        DetalleRGE.objects.create(
+            carga=rge_load, codigo="PED-001", ubicacion="P-01"
+        )
+        count_load = CargaConteoInventario.objects.create(
+            archivo_nombre="conteo-pedregal.xlsx", cargado_por=self.admin,
+        )
+        DetalleConteoInventario.objects.create(
+            carga=count_load, bodega="PEDREGAL", ubicacion="P-01",
+            codigo="PED-001", cantidad=1,
+        )
+        self.client.force_login(self.user)
+
+        response = self.client.get(reverse("conteo:progress_general"))
+
+        warehouses = {item["value"]: item for item in response.context["warehouse_cards"]}
+        self.assertIn("BODEGA PEDREGAL", warehouses)
+        pedregal = warehouses["BODEGA PEDREGAL"]
+        self.assertEqual(
+            (pedregal["expected"], pedregal["counted"], pedregal["percentage"]),
+            (1, 1, 100),
+        )
+        self.assertEqual(pedregal["types"][0]["name"], "Primario")
+        self.assertContains(response, "Bodega Pedregal")
+
     def test_progress_differences_groups_missing_rge_codes_by_primary_location(self):
         for location in ("A01I-B01", "A01I-B02"):
             Ubicacion.objects.create(

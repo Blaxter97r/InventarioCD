@@ -122,6 +122,13 @@
   background: linear-gradient(145deg, #fff 0%, #fff 68%, #f1f8fb 100%);
 }
 
+.general-warehouse-card:nth-child(3) {
+  --warehouse-color: #b97818;
+  --warehouse-color-soft: #fff7e9;
+  border-color: #eadcc3;
+  background: linear-gradient(145deg, #fff 0%, #fff 68%, #fff8ec 100%);
+}
+
 .general-warehouse-card::before {
   position: absolute;
   top: 0;
