@@ -40,7 +40,7 @@
 
     <div class="code-difference-summary">
       <div><p class="count-eyebrow">Detalle seleccionado</p><h2>{{ selected_warehouse|title }} · {{ selected_type|title }}</h2><p>{{ format_help }} · {{ location_total }} ubicaciones</p></div>
-      <span class="code-alert-count {% if not missing_codes %}is-clear{% endif %}"><strong>{{ missing_codes }}/{{ total_codes }}</strong> sin contar</span>
+      <span class="code-alert-count {% if not missing_codes %}is-clear{% endif %}"><strong>{{ missing_codes }}</strong> códigos sin contar</span>
     </div>
 
     {% if invalid_total %}<aside class="progress-data-alert"><strong>Revisión de formato:</strong> {{ invalid_total }} ubicaciones no coinciden con la estructura esperada y no se muestran en el desglose.</aside>{% endif %}
@@ -54,7 +54,7 @@
             data-group3-label="{{ group_labels.2 }}" data-leaf-label="{{ leaf_label }}">
             <header class="progress-explorer__heading">
               <div><p class="count-eyebrow">Recorrido horizontal</p><h2>{{ scope_label }} {{ scope.name }}</h2><p>Selecciona cada columna para avanzar hasta las ubicaciones.</p></div>
-              <span class="code-alert-count {% if not scope.missing_codes %}is-clear{% endif %}"><strong>{{ scope.missing_codes }}/{{ scope.total_codes }}</strong> sin contar</span>
+              <span class="code-alert-count {% if not scope.missing_codes %}is-clear{% endif %}"><strong>{{ scope.missing_codes }}</strong> códigos sin contar</span>
             </header>
             <nav class="progress-explorer__trail" aria-label="Ruta seleccionada">
               <button type="button" data-difference-back>{{ scope_label }} {{ scope.name }}</button><i>/</i>

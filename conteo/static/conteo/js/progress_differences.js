@@ -34,13 +34,21 @@
     const lists = Object.fromEntries(["group1", "group2", "group3", "locations"].map((key) => [key, explorer.querySelector(`[data-difference-list='${key}']`)]));
     const trail = Object.fromEntries(["group1", "group2", "group3"].map((key) => [key, explorer.querySelector(`[data-difference-trail='${key}']`)]));
     const labelValue = (label, value) => `${label} ${value}`;
-    const alertText = (item) => `${item.missing_codes}/${item.total_codes} sin contar`;
+    const normalizedLabel = (value) => value.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toUpperCase();
+    const stages = ["group1", "group2", "group3"];
+    const shelfStage = stages.findIndex((key) => normalizedLabel(labels[key]) === "ESTANTE");
+    const metricText = (item, stage) => {
+      const stageIndex = stages.indexOf(stage);
+      return shelfStage >= 0 && stageIndex >= shelfStage
+        ? `${item.counted_codes}/${item.total_codes} contados`
+        : `${item.missing_codes} códigos sin contar`;
+    };
     const moveTo = (columnName) => {
       if (!window.matchMedia("(max-width: 900px)").matches) return;
       const column = explorer.querySelector(`[data-difference-column='${columnName}']`);
       if (column) browser.scrollTo({ left: column.offsetLeft, behavior: "smooth" });
     };
-    const makeOption = (item, label, selected, onSelect) => {
+    const makeOption = (item, label, stage, selected, onSelect) => {
       const button = document.createElement("button");
       button.type = "button";
       button.className = "progress-browser__option difference-browser__option";
@@ -51,7 +59,7 @@
       const name = document.createElement("strong");
       name.textContent = label;
       const alert = document.createElement("small");
-      alert.textContent = alertText(item);
+      alert.textContent = metricText(item, stage);
       heading.append(name, alert);
       const meter = document.createElement("span");
       meter.className = "difference-browser__meter";
@@ -77,7 +85,7 @@
         makeEmpty(lists.locations, `Selecciona ${labels.group3.toLowerCase()}`);
         return;
       }
-      locationCount.textContent = `${state.group3.locations.length} ubicaciones · ${alertText(state.group3)}`;
+      locationCount.textContent = `${state.group3.locations.length} ubicaciones · ${metricText(state.group3, "group3")}`;
       state.group3.locations.forEach((location) => {
         const card = document.createElement(location.missing_codes ? "details" : "div");
         card.className = "difference-location-card";
@@ -92,8 +100,8 @@
         const alert = document.createElement("span");
         alert.className = `code-alert-count${location.missing_codes ? "" : " is-clear"}`;
         const alertStrong = document.createElement("strong");
-        alertStrong.textContent = `${location.missing_codes}/${location.total_codes}`;
-        alert.append(alertStrong, " sin contar");
+        alertStrong.textContent = `${location.counted_codes}/${location.total_codes}`;
+        alert.append(alertStrong, " contados");
         heading.append(data, alert);
         card.append(heading);
         if (location.missing_codes) {
@@ -112,14 +120,14 @@
     const renderGroup3 = () => {
       lists.group3.replaceChildren();
       if (!state.group2) { makeEmpty(lists.group3, `Selecciona ${labels.group2.toLowerCase()}`); return; }
-      state.group2.children.forEach((item) => lists.group3.append(makeOption(item, labelValue(labels.group3, item.name), state.group3?.name === item.name, () => {
+      state.group2.children.forEach((item) => lists.group3.append(makeOption(item, labelValue(labels.group3, item.name), "group3", state.group3?.name === item.name, () => {
         state.group3 = item; updateTrail(); renderGroup3(); renderLocations(); moveTo("locations");
       })));
     };
     const renderGroup2 = () => {
       lists.group2.replaceChildren();
       if (!state.group1) { makeEmpty(lists.group2, `Selecciona ${labels.group1.toLowerCase()}`); return; }
-      state.group1.children.forEach((item) => lists.group2.append(makeOption(item, labelValue(labels.group2, item.name), state.group2?.name === item.name, () => {
+      state.group1.children.forEach((item) => lists.group2.append(makeOption(item, labelValue(labels.group2, item.name), "group2", state.group2?.name === item.name, () => {
         state.group2 = item; state.group3 = null; updateTrail(); renderGroup2(); renderGroup3(); renderLocations(); moveTo("group3");
       })));
     };
@@ -129,7 +137,7 @@
       lists.group1.replaceChildren();
       group1Count.textContent = `${filtered.length} opciones`;
       if (!filtered.length) { makeEmpty(lists.group1, "Sin resultados"); return; }
-      filtered.forEach((item) => lists.group1.append(makeOption(item, labelValue(labels.group1, item.name), state.group1?.name === item.name, () => {
+      filtered.forEach((item) => lists.group1.append(makeOption(item, labelValue(labels.group1, item.name), "group1", state.group1?.name === item.name, () => {
         state.group1 = item; state.group2 = null; state.group3 = null; updateTrail(); renderGroup1(); renderGroup2(); renderGroup3(); renderLocations(); moveTo("group2");
       })));
     };

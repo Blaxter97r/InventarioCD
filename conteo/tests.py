@@ -644,7 +644,7 @@ class DifferenceAccessTests(TestCase):
         locations = {item["code"]: item for item in shelf["locations"]}
         self.assertEqual(locations["A01I-B01"]["missing_code_list"], ["FALTA-UNO"])
         self.assertEqual(locations["A01I-B02"]["missing_code_list"], ["FALTA-DOS"])
-        self.assertContains(response, "2/3")
+        self.assertContains(response, "2</strong> códigos sin contar")
         self.assertContains(response, "Diferencias")
         self.assertContains(response, "data-code-difference-explorer")
         self.assertContains(response, "conteo/js/progress_differences.js")
