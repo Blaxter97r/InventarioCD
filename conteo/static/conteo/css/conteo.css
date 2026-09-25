@@ -509,6 +509,45 @@
 .progress-explorer-prompt h2 { margin: 0 0 4px; color: var(--count-navy); font: 800 15px "Manrope", sans-serif; }
 .progress-explorer-prompt p, .progress-explorer__noscript { margin: 0; color: #7e8c90; font-size: 9px; }
 
+.code-difference-filters { margin-bottom: 22px; }
+.code-difference-filter-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.code-difference-filter-grid article { padding: 17px 18px; border: 1px solid var(--count-line); border-radius: 12px; background: #fff; }
+.code-difference-filter-grid article > span { color: #839194; font-size: 8px; font-weight: 800; text-transform: uppercase; }
+.code-difference-filter-grid h3 { margin: 3px 0 12px; color: var(--count-navy); font: 800 15px "Manrope", sans-serif; }
+.code-difference-filter-grid article > div { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.code-difference-filter-grid a { padding: 10px 12px; border: 1px solid #dfe8e7; border-radius: 8px; color: #58706e; background: #fafcfc; font-size: 9px; font-weight: 800; text-align: center; }
+.code-difference-filter-grid a:hover { border-color: #9bcfc8; }
+.code-difference-filter-grid a.is-selected { border-color: #55ad9f; color: #176f65; background: #eaf7f4; box-shadow: 0 0 0 2px rgba(8,127,118,.07); }
+.code-difference-summary { display: flex; align-items: center; justify-content: space-between; gap: 18px; margin-bottom: 13px; padding: 18px 20px; border: 1px solid #e4eaea; border-radius: 13px; background: #fff; }
+.code-difference-summary h2 { margin: 2px 0 4px; color: var(--count-navy); font: 800 18px "Manrope", sans-serif; }
+.code-difference-summary p:last-child { margin: 0; color: #7c8b8e; font-size: 9px; }
+.code-alert-count { display: inline-flex; align-items: baseline; gap: 4px; flex: 0 0 auto; padding: 6px 9px; border: 1px solid #efc7c3; border-radius: 999px; color: #9a403a; background: #fff1f0; font-size: 7px; font-weight: 800; white-space: nowrap; }
+.code-alert-count strong { font-size: 10px; }
+.code-alert-count.is-clear { border-color: #bfe0d6; color: #28745f; background: #edf8f4; }
+.code-difference-summary > .code-alert-count { padding: 9px 13px; font-size: 9px; }
+.code-difference-summary > .code-alert-count strong { font-size: 17px; }
+.code-difference-tree { display: grid; gap: 12px; margin: 0 0 30px; }
+.code-difference-node { overflow: hidden; border: 1px solid #e1e8e8; border-radius: 10px; background: #fff; }
+.code-difference-node--scope { border-color: #cbdedb; border-radius: 13px; box-shadow: 0 9px 26px rgba(28,67,71,.05); }
+.code-difference-node summary, .code-difference-location { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 11px 13px; cursor: pointer; list-style: none; }
+.code-difference-node summary::-webkit-details-marker, .code-difference-location summary::-webkit-details-marker { display: none; }
+.code-difference-node summary::before { width: 16px; flex: 0 0 16px; color: #7d918e; content: "›"; font-size: 17px; font-weight: 800; transition: transform .15s ease; }
+.code-difference-node[open] > summary::before { transform: rotate(90deg); }
+.code-difference-node summary > span:first-of-type, .code-difference-location > span:first-child, .code-difference-location summary > span:first-of-type { min-width: 0; flex: 1; }
+.code-difference-node summary small, .code-difference-location small { display: block; margin-bottom: 2px; color: #899799; font-size: 7px; font-weight: 800; text-transform: uppercase; }
+.code-difference-node summary > span > strong, .code-difference-location > span > strong, .code-difference-location summary > span > strong { display: block; overflow: hidden; color: #365258; font: 800 10px "Manrope", sans-serif; text-overflow: ellipsis; white-space: nowrap; }
+.code-difference-node--scope > summary { padding: 15px 17px; background: #f5faf9; }
+.code-difference-node--scope > summary > span > strong { color: #214e4b; font-size: 14px; }
+.code-difference-node__children { display: grid; gap: 8px; padding: 9px 10px 10px 26px; border-top: 1px solid #edf1f1; background: #fafcfc; }
+.code-difference-locations { display: grid; gap: 6px; padding: 8px 9px 9px 25px; border-top: 1px solid #edf1f1; background: #fbfcfc; }
+.code-difference-location { overflow: hidden; padding: 0; border: 1px solid #eccbc7; border-radius: 9px; background: #fff7f6; }
+.code-difference-location > summary { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 12px; cursor: pointer; list-style: none; }
+.code-difference-location > summary::before { width: 13px; flex: 0 0 13px; color: #a45952; content: "+"; font-size: 13px; font-weight: 900; }
+.code-difference-location[open] > summary::before { content: "−"; }
+.code-difference-location.is-clear { padding: 10px 12px 10px 37px; border-color: #d8e7e2; background: #f7fbf9; }
+.code-difference-codes { display: flex; flex-wrap: wrap; gap: 6px; padding: 10px 12px 12px 37px; border-top: 1px solid #f0d9d6; }
+.code-difference-codes span { padding: 5px 7px; border-radius: 6px; color: #91443e; background: #f9dedb; font-size: 8px; font-weight: 800; }
+
 @media (max-width: 900px) {
   .recount-summary-head { display: none; }
   .recount-summary-trigger { grid-template-columns: minmax(0, 1fr) auto; gap: 8px 14px; }
@@ -532,6 +571,7 @@
   .progress-browser { display: flex; overflow-x: auto; scroll-snap-type: x proximity; }
   .progress-browser__column { width: min(72vw, 320px); flex: 0 0 min(72vw, 320px); scroll-snap-align: start; }
   .progress-browser__column--locations { width: min(82vw, 380px); flex-basis: min(82vw, 380px); }
+  .code-difference-filter-grid { grid-template-columns: 1fr; }
   .queue-file { grid-column: 1 / -1; }
   .queue-actions { justify-content: flex-end; }
 }
@@ -587,4 +627,8 @@
   .progress-reconciliation__metrics strong { grid-row: 1 / 3; grid-column: 2; }
   .progress-reconciliation__table-wrap { margin-inline: 18px; }
   .progress-reconciliation footer { padding-inline: 18px; }
+  .code-difference-summary { align-items: flex-start; flex-direction: column; }
+  .code-difference-node__children { padding-left: 14px; }
+  .code-difference-locations { padding-left: 14px; }
+  .code-difference-filter-grid article > div { grid-template-columns: 1fr; }
 }

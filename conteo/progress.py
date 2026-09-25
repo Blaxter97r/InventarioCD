@@ -259,6 +259,151 @@ def _build_tree(scoped_expected, counted, validated, reconciliation, config):
     return make_level(set(scoped_expected), 0) if scoped_expected else []
 
 
+def _code_difference_summary(locations, codes_by_location, counted_codes):
+    expected_codes = set().union(
+        *(codes_by_location.get(location, set()) for location in locations)
+    ) if locations else set()
+    missing_codes = expected_codes - counted_codes
+    return {
+        "total_codes": len(expected_codes),
+        "missing_codes": len(missing_codes),
+        "counted_codes": len(expected_codes) - len(missing_codes),
+        "missing_code_list": sorted(missing_codes),
+    }
+
+
+def _build_code_difference_tree(expected, codes_by_location, counted_codes, config):
+    """Agrupa los códigos del RGE no encontrados en el conteo por su ubicación teórica."""
+    group_keys = [item[0] for item in config["groups"]]
+
+    def make_level(locations, depth):
+        key = group_keys[depth]
+        nodes = []
+        for name in sorted({expected[location][key] for location in locations}):
+            node_locations = {
+                location for location in locations if expected[location][key] == name
+            }
+            node = {
+                "name": name,
+                **_code_difference_summary(node_locations, codes_by_location, counted_codes),
+            }
+            if depth < len(group_keys) - 1:
+                node["children"] = make_level(node_locations, depth + 1)
+            else:
+                node["locations"] = []
+                for location in sorted(node_locations):
+                    item = {
+                        "code": location,
+                        "leaf_value": (
+                            expected[location].get(config["leaf_key"], "")
+                            if config["leaf_key"] else ""
+                        ),
+                        **_code_difference_summary(
+                            {location}, codes_by_location, counted_codes
+                        ),
+                    }
+                    node["locations"].append(item)
+            nodes.append(node)
+        return nodes
+
+    return make_level(set(expected), 0) if expected else []
+
+
+def build_code_differences_dashboard(selected_warehouse="", selected_type=""):
+    """Tablero de códigos esperados por el RGE que aún no aparecen en el conteo."""
+    current_load = CargaConteoInventario.objects.first()
+    current_rge = CargaRGE.objects.first()
+    rge_locations = set()
+    if current_rge:
+        rge_locations = {
+            _normalize(value)
+            for value in DetalleRGE.objects.filter(carga=current_rge)
+            .values_list("ubicacion", flat=True).order_by().distinct()
+        }
+
+    expected_by_config, invalid_by_config, _ = _configured_locations(rge_locations)
+    requested_key = (_normalize(selected_warehouse), _normalize(selected_type))
+    key = requested_key if requested_key in LOCATION_CONFIGS else ("BODEGA CENTRAL", "PRIMARIO")
+    warehouse, location_type = key
+    config = LOCATION_CONFIGS[key]
+    expected = expected_by_config[key]
+
+    codes_by_location = {location: set() for location in expected}
+    if current_rge and expected:
+        for code, location in DetalleRGE.objects.filter(
+            carga=current_rge, ubicacion__in=expected
+        ).values_list("codigo", "ubicacion"):
+            normalized_location = _normalize(location)
+            normalized_code = _normalize(code)
+            if normalized_location in codes_by_location and normalized_code:
+                codes_by_location[normalized_location].add(normalized_code)
+
+    counted_codes = set()
+    if current_load:
+        counted_codes = {
+            _normalize(value)
+            for value in DetalleConteoInventario.objects.filter(carga=current_load)
+            .values_list("codigo", flat=True).order_by().distinct()
+            if _normalize(value)
+        }
+
+    scopes = []
+    scope_key = config["scope_key"]
+    for name in sorted({dimensions[scope_key] for dimensions in expected.values()}):
+        scoped_expected = {
+            location: dimensions
+            for location, dimensions in expected.items()
+            if dimensions[scope_key] == name
+        }
+        scope_locations = set(scoped_expected)
+        scopes.append({
+            "name": name,
+            **_code_difference_summary(scope_locations, codes_by_location, counted_codes),
+            "groups": _build_code_difference_tree(
+                scoped_expected, codes_by_location, counted_codes, config
+            ),
+        })
+
+    selected_summary = _code_difference_summary(
+        set(expected), codes_by_location, counted_codes
+    )
+    selectors = []
+    for selector_warehouse in dict.fromkeys(item[0] for item in LOCATION_CONFIGS):
+        selectors.append({
+            "name": selector_warehouse.title(),
+            "value": selector_warehouse,
+            "types": [
+                {
+                    "name": selector_type.title(),
+                    "value": selector_type,
+                    "url": "?" + urlencode({
+                        "bodega": selector_warehouse,
+                        "tipo": selector_type,
+                    }),
+                }
+                for configured_warehouse, selector_type in LOCATION_CONFIGS
+                if configured_warehouse == selector_warehouse
+            ],
+        })
+
+    return {
+        "current_load": current_load,
+        "current_rge": current_rge,
+        "selected_warehouse": warehouse,
+        "selected_type": location_type,
+        "selectors": selectors,
+        "scope_label": config["scope_label"],
+        "group_labels": [label for _, label in config["groups"]],
+        "leaf_label": config["leaf_label"],
+        "format_help": config["format_help"],
+        "invalid_total": invalid_by_config[key],
+        "location_total": len(expected),
+        "scopes": scopes,
+        "refresh_query": urlencode({"bodega": warehouse, "tipo": location_type}),
+        **selected_summary,
+    }
+
+
 def build_progress_dashboard(selected_floor="", selected_warehouse="", selected_type="", *, summary_only=False):
     current_load = CargaConteoInventario.objects.first()
     current_rge = CargaRGE.objects.first()

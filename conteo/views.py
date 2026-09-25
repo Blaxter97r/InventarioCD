@@ -37,7 +37,13 @@ from .models import (
     ValidacionUbicacion,
 )
 from .services import DifferenceImportError, import_differences
-from .progress import LOCATION_CONFIGS, _normalize, _parse_location, build_progress_dashboard
+from .progress import (
+    LOCATION_CONFIGS,
+    _normalize,
+    _parse_location,
+    build_code_differences_dashboard,
+    build_progress_dashboard,
+)
 from .progress_reports import (
     build_secondary_quantity_difference_pdf,
     rge_modification_rows,
@@ -802,6 +808,15 @@ def progress_view(request):
         request.GET.get("tipo", "").strip(),
     )
     return render(request, "conteo/progress.html", context)
+
+
+@login_required
+def progress_differences_view(request):
+    context = build_code_differences_dashboard(
+        request.GET.get("bodega", "").strip(),
+        request.GET.get("tipo", "").strip(),
+    )
+    return render(request, "conteo/progress_differences.html", context)
 
 
 @login_required

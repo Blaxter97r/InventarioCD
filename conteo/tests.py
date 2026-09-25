@@ -609,6 +609,44 @@ class DifferenceAccessTests(TestCase):
         primary = response.context["warehouse_cards"][0]["types"][0]
         self.assertEqual((primary["expected"], primary["counted"], primary["percentage"]), (2, 1, 50))
 
+    def test_progress_differences_groups_missing_rge_codes_by_primary_location(self):
+        for location in ("A01I-B01", "A01I-B02"):
+            Ubicacion.objects.create(
+                ubicacion=location, bodega="BODEGA CENTRAL", sector="1", tipo="PRIMARIO"
+            )
+        rge_load = CargaRGE.objects.create(
+            archivo_nombre="rge.xlsx", cargado_por=self.admin,
+        )
+        for code, location in (
+            ("CONTADO", "A01I-B01"),
+            ("FALTA-UNO", "A01I-B01"),
+            ("FALTA-DOS", "A01I-B02"),
+        ):
+            DetalleRGE.objects.create(carga=rge_load, codigo=code, ubicacion=location)
+        count_load = CargaConteoInventario.objects.create(
+            archivo_nombre="conteo.xlsx", cargado_por=self.admin,
+        )
+        DetalleConteoInventario.objects.create(
+            carga=count_load, bodega="CENTRAL", ubicacion="OTRA", codigo="contado", cantidad=1,
+        )
+        self.client.force_login(self.user)
+
+        response = self.client.get(reverse("conteo:progress_differences"))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTemplateUsed(response, "conteo/progress_differences.html")
+        self.assertEqual(response.context["total_codes"], 3)
+        self.assertEqual(response.context["missing_codes"], 2)
+        aisle = response.context["scopes"][0]["groups"][0]
+        shelf = aisle["children"][0]["children"][0]
+        self.assertEqual(aisle["missing_codes"], 2)
+        self.assertEqual(shelf["missing_codes"], 2)
+        locations = {item["code"]: item for item in shelf["locations"]}
+        self.assertEqual(locations["A01I-B01"]["missing_code_list"], ["FALTA-UNO"])
+        self.assertEqual(locations["A01I-B02"]["missing_code_list"], ["FALTA-DOS"])
+        self.assertContains(response, "2/3")
+        self.assertContains(response, "Difierencias")
+
     def test_supervisor_can_open_upload_and_download_template(self):
         self.client.force_login(self.user)
         index = self.client.get(reverse("conteo:differences_index"))
