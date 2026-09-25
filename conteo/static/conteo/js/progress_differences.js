@@ -31,6 +31,7 @@
     const search = explorer.querySelector("[data-difference-search]");
     const group1Count = explorer.querySelector("[data-difference-group1-count]");
     const locationCount = explorer.querySelector("[data-difference-location-count]");
+    const secondaryPdfDownload = explorer.querySelector("[data-secondary-pdf-download]");
     const lists = Object.fromEntries(["group1", "group2", "group3", "locations"].map((key) => [key, explorer.querySelector(`[data-difference-list='${key}']`)]));
     const trail = Object.fromEntries(["group1", "group2", "group3"].map((key) => [key, explorer.querySelector(`[data-difference-trail='${key}']`)]));
     const labelValue = (label, value) => `${label} ${value}`;
@@ -77,6 +78,18 @@
         trail[key].textContent = state[key] ? labelValue(labels[key], state[key].name) : `${labels[key]} —`;
         trail[key].disabled = !state[key];
       });
+      if (secondaryPdfDownload) {
+        secondaryPdfDownload.hidden = !state.group1;
+        if (state.group1) {
+          const params = new URLSearchParams({
+            bodega: explorer.dataset.warehouse,
+            piso: scope.name,
+            pasillo: state.group1.name,
+          });
+          secondaryPdfDownload.href = `${explorer.dataset.secondaryPdfUrl}?${params}`;
+          secondaryPdfDownload.textContent = `PDF diferencias · ${labels.group1} ${state.group1.name}`;
+        }
+      }
     };
     const renderLocations = () => {
       lists.locations.replaceChildren();

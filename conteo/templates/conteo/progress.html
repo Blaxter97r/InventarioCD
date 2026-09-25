@@ -73,7 +73,6 @@
           data-validation-url="{% url 'conteo:validate_progress_location' %}"
           data-location-type="{{ selected_type }}"
           data-warehouse="{{ selected_warehouse }}"
-          data-secondary-pdf-url="{% url 'conteo:secondary_quantity_differences_pdf' %}"
           data-scope-label="{{ scope_label }}" data-scope-value="{{ selected_scope }}"
           data-group1-label="{{ group_labels.0 }}" data-group2-label="{{ group_labels.1 }}"
           data-group3-label="{{ group_labels.2 }}" data-leaf-label="{{ leaf_label }}">
@@ -81,7 +80,6 @@
             <div><p class="count-eyebrow">Recorrido operativo</p><h2>Explorar ubicaciones por conciliar</h2><p>Una ubicación sin escaneo es una alerta para investigar, no una orden automática de conteo.</p></div>
             <div class="progress-explorer__actions">
               <span class="progress-explorer__floor">{{ scope_label }} {{ selected_scope }}</span>
-              {% if selected_type == "SECUNDARIO" %}<a class="count-button progress-secondary-pdf" data-secondary-pdf-download hidden>Descargar diferencias del pasillo</a>{% endif %}
               <a class="count-button count-button--primary" href="{% url 'conteo:pending_locations_download' selected_scope %}?{{ selected_query }}"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4v12m0 0 5-5m-5 5-5-5M5 20h14" /></svg>Descargar no contadas</a>
             </div>
           </header>

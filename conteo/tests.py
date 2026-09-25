@@ -347,8 +347,16 @@ class DifferenceAccessTests(TestCase):
         page = self.client.get(reverse("conteo:progress"), {
             "bodega": "BODEGA CENTRAL", "tipo": "SECUNDARIO", "piso": "E",
         })
-        self.assertContains(page, "data-secondary-pdf-download")
+        self.assertNotContains(page, "data-secondary-pdf-download")
         self.assertContains(page, reverse("conteo:rge_modifications_download"))
+
+        differences_page = self.client.get(reverse("conteo:progress_differences"), {
+            "bodega": "BODEGA CENTRAL", "tipo": "SECUNDARIO", "piso": "E",
+        })
+        self.assertContains(differences_page, "data-secondary-pdf-download")
+        self.assertContains(
+            differences_page, reverse("conteo:secondary_quantity_differences_pdf")
+        )
 
     def test_secondary_modify_rge_flag_exports_actual_counted_locations(self):
         source = "E08-045Y"
@@ -631,12 +639,20 @@ class DifferenceAccessTests(TestCase):
         )
         self.client.force_login(self.user)
 
-        response = self.client.get(reverse("conteo:progress_differences"))
+        selector = self.client.get(reverse("conteo:progress_differences"))
+        self.assertEqual(selector.context["selected_scope"], "")
+        self.assertNotContains(selector, "data-code-difference-explorer")
+        self.assertContains(selector, "Selecciona un piso")
+
+        response = self.client.get(
+            reverse("conteo:progress_differences"), {"piso": "A"}
+        )
 
         self.assertEqual(response.status_code, 200)
         self.assertTemplateUsed(response, "conteo/progress_differences.html")
         self.assertEqual(response.context["total_codes"], 3)
         self.assertEqual(response.context["missing_codes"], 2)
+        self.assertEqual(response.context["selected_scope"], "A")
         aisle = response.context["scopes"][0]["groups"][0]
         shelf = aisle["children"][0]["children"][0]
         self.assertEqual(aisle["missing_codes"], 2)

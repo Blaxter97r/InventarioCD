@@ -309,7 +309,9 @@ def _build_code_difference_tree(expected, codes_by_location, counted_codes, conf
     return make_level(set(expected), 0) if expected else []
 
 
-def build_code_differences_dashboard(selected_warehouse="", selected_type=""):
+def build_code_differences_dashboard(
+    selected_warehouse="", selected_type="", selected_floor=""
+):
     """Tablero de códigos esperados por el RGE que aún no aparecen en el conteo."""
     current_load = CargaConteoInventario.objects.first()
     current_rge = CargaRGE.objects.first()
@@ -347,9 +349,14 @@ def build_code_differences_dashboard(selected_warehouse="", selected_type=""):
             if _normalize(value)
         }
 
-    scopes = []
     scope_key = config["scope_key"]
-    for name in sorted({dimensions[scope_key] for dimensions in expected.values()}):
+    available_scopes = sorted({dimensions[scope_key] for dimensions in expected.values()})
+    selected_scope = _normalize(selected_floor)
+    if selected_scope not in available_scopes:
+        selected_scope = ""
+
+    scopes = []
+    for name in available_scopes:
         scoped_expected = {
             location: dimensions
             for location, dimensions in expected.items()
@@ -359,8 +366,16 @@ def build_code_differences_dashboard(selected_warehouse="", selected_type=""):
         scopes.append({
             "name": name,
             **_code_difference_summary(scope_locations, codes_by_location, counted_codes),
-            "groups": _build_code_difference_tree(
-                scoped_expected, codes_by_location, counted_codes, config
+            "url": "?" + urlencode({
+                "bodega": warehouse,
+                "tipo": location_type,
+                "piso": name,
+            }),
+            "groups": (
+                _build_code_difference_tree(
+                    scoped_expected, codes_by_location, counted_codes, config
+                )
+                if name == selected_scope else []
             ),
         })
 
@@ -399,7 +414,13 @@ def build_code_differences_dashboard(selected_warehouse="", selected_type=""):
         "invalid_total": invalid_by_config[key],
         "location_total": len(expected),
         "scopes": scopes,
-        "refresh_query": urlencode({"bodega": warehouse, "tipo": location_type}),
+        "selected_scope": selected_scope,
+        "selected_floor": selected_scope,
+        "refresh_query": urlencode({
+            "bodega": warehouse,
+            "tipo": location_type,
+            **({"piso": selected_scope} if selected_scope else {}),
+        }),
         **selected_summary,
     }
 

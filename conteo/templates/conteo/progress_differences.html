@@ -46,15 +46,36 @@
     {% if invalid_total %}<aside class="progress-data-alert"><strong>Revisión de formato:</strong> {{ invalid_total }} ubicaciones no coinciden con la estructura esperada y no se muestran en el desglose.</aside>{% endif %}
 
     {% if current_rge and scopes %}
-      <div class="code-difference-explorers">
-        {% for scope in scopes %}
+      <section class="progress-section code-difference-scope-picker">
+        <div class="difference-section__heading">
+          <div><h2>Selecciona un {{ scope_label|lower }}</h2><p>Solo se desplegará el recorrido del {{ scope_label|lower }} elegido.</p></div>
+        </div>
+        <div class="progress-floor-grid">
+          {% for scope in scopes %}
+            <a href="{{ scope.url }}" class="progress-floor code-difference-scope {% if scope.name == selected_scope %}is-selected{% endif %}">
+              <span>{{ scope_label }} {{ scope.name }}</span>
+              <strong>{{ scope.missing_codes }}</strong>
+              <small>códigos sin contar de {{ scope.total_codes }} en RGE</small>
+            </a>
+          {% endfor %}
+        </div>
+      </section>
+
+      {% if selected_scope %}
+        <div class="code-difference-explorers">
+          {% for scope in scopes %}{% if scope.name == selected_scope %}
           <section class="progress-explorer code-difference-explorer" data-code-difference-explorer
             data-scope-name="{{ scope.name }}" data-scope-label="{{ scope_label }}"
+            data-location-type="{{ selected_type }}" data-warehouse="{{ selected_warehouse }}"
+            data-secondary-pdf-url="{% url 'conteo:secondary_quantity_differences_pdf' %}"
             data-group1-label="{{ group_labels.0 }}" data-group2-label="{{ group_labels.1 }}"
             data-group3-label="{{ group_labels.2 }}" data-leaf-label="{{ leaf_label }}">
             <header class="progress-explorer__heading">
               <div><p class="count-eyebrow">Recorrido horizontal</p><h2>{{ scope_label }} {{ scope.name }}</h2><p>Selecciona cada columna para avanzar hasta las ubicaciones.</p></div>
-              <span class="code-alert-count {% if not scope.missing_codes %}is-clear{% endif %}"><strong>{{ scope.missing_codes }}</strong> códigos sin contar</span>
+              <div class="progress-explorer__actions">
+                <span class="code-alert-count {% if not scope.missing_codes %}is-clear{% endif %}"><strong>{{ scope.missing_codes }}</strong> códigos sin contar</span>
+                {% if selected_type == "SECUNDARIO" %}<a class="count-button progress-secondary-pdf" data-secondary-pdf-download hidden>Descargar diferencias del pasillo</a>{% endif %}
+              </div>
             </header>
             <nav class="progress-explorer__trail" aria-label="Ruta seleccionada">
               <button type="button" data-difference-back>{{ scope_label }} {{ scope.name }}</button><i>/</i>
@@ -82,10 +103,13 @@
               </section>
             </div>
           </section>
-        {% endfor %}
-      </div>
-      {{ scopes|json_script:"code-differences-data" }}
-      <script src="{% static 'conteo/js/progress_differences.js' %}?v=20260925-1" defer></script>
+          {% endif %}{% endfor %}
+        </div>
+        {{ scopes|json_script:"code-differences-data" }}
+        <script src="{% static 'conteo/js/progress_differences.js' %}?v=20260925-2" defer></script>
+      {% else %}
+        <section class="progress-explorer-prompt"><span aria-hidden="true">↑</span><div><h2>Selecciona un {{ scope_label|lower }}</h2><p>Se abrirá únicamente su recorrido de diferencias.</p></div></section>
+      {% endif %}
     {% elif not current_rge %}
       <section class="queue-empty"><span>!</span><h2>No hay un RGE vigente</h2><p>Carga el RGE para identificar los códigos que aún no han sido contados.</p></section>
     {% else %}

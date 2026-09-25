@@ -815,6 +815,7 @@ def progress_differences_view(request):
     context = build_code_differences_dashboard(
         request.GET.get("bodega", "").strip(),
         request.GET.get("tipo", "").strip(),
+        request.GET.get("piso", "").strip(),
     )
     return render(request, "conteo/progress_differences.html", context)
 

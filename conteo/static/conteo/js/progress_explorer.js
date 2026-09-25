@@ -38,7 +38,6 @@
   const rgeModificationCheckbox = explorer.querySelector("[data-rge-modification-checkbox]");
   const validationUrl = explorer.dataset.validationUrl;
   const locationType = explorer.dataset.locationType;
-  const secondaryPdfDownload = explorer.querySelector("[data-secondary-pdf-download]");
   const restoredStateKey = `inventario:avance:explorador:${window.location.search}`;
   let currentLocation = null;
   const dialogFields = {
@@ -113,18 +112,6 @@
       trail[key].textContent = state[key] ? labelValue(labels[key], state[key].name) : `${labels[key]} —`;
       trail[key].disabled = !state[key];
     });
-    if (secondaryPdfDownload) {
-      secondaryPdfDownload.hidden = !state.group1;
-      if (state.group1) {
-        const params = new URLSearchParams({
-          bodega: explorer.dataset.warehouse,
-          piso: explorer.dataset.scopeValue,
-          pasillo: state.group1.name,
-        });
-        secondaryPdfDownload.href = `${explorer.dataset.secondaryPdfUrl}?${params}`;
-        secondaryPdfDownload.textContent = `PDF diferencias · ${labels.group1} ${state.group1.name}`;
-      }
-    }
   };
 
   const messages = {
