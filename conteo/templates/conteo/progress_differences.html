@@ -1,14 +1,14 @@
 {% extends "layouts/app_shell.html" %}
 {% load static %}
-{% block title %}Difierencias del conteo | Inventario 2026{% endblock %}
-{% block extra_css %}<link rel="stylesheet" href="{% static 'conteo/css/conteo.css' %}?v=20260925-1" />{% endblock %}
-{% block page_name %}Conteo · Avance · Difierencias{% endblock %}
+{% block title %}Diferencias del conteo | Inventario 2026{% endblock %}
+{% block extra_css %}<link rel="stylesheet" href="{% static 'conteo/css/conteo.css' %}?v=20260925-2" />{% endblock %}
+{% block page_name %}Conteo · Avance · Diferencias{% endblock %}
 {% block page_content %}
   <div class="count-page progress-page code-differences-page">
     <div class="count-heading progress-heading">
       <div>
         <p class="count-eyebrow">Alertas del RGE</p>
-        <h1>Difierencias del conteo</h1>
+        <h1>Diferencias del conteo</h1>
         <p>Códigos esperados en el RGE que todavía no aparecen en el último conteo cargado.</p>
       </div>
       <a class="count-button count-button--primary" href="{% url 'conteo:progress_differences' %}?{{ refresh_query }}">Actualizar ahora</a>
@@ -46,46 +46,46 @@
     {% if invalid_total %}<aside class="progress-data-alert"><strong>Revisión de formato:</strong> {{ invalid_total }} ubicaciones no coinciden con la estructura esperada y no se muestran en el desglose.</aside>{% endif %}
 
     {% if current_rge and scopes %}
-      <section class="code-difference-tree" aria-label="Desglose de códigos sin contar">
+      <div class="code-difference-explorers">
         {% for scope in scopes %}
-          <details class="code-difference-node code-difference-node--scope" open>
-            <summary><span><small>{{ scope_label }}</small><strong>{{ scope.name }}</strong></span><span class="code-alert-count {% if not scope.missing_codes %}is-clear{% endif %}"><strong>{{ scope.missing_codes }}/{{ scope.total_codes }}</strong> sin contar</span></summary>
-            <div class="code-difference-node__children">
-              {% for group1 in scope.groups %}
-                <details class="code-difference-node">
-                  <summary><span><small>{{ group_labels.0 }}</small><strong>{{ group1.name }}</strong></span><span class="code-alert-count {% if not group1.missing_codes %}is-clear{% endif %}"><strong>{{ group1.missing_codes }}/{{ group1.total_codes }}</strong> sin contar</span></summary>
-                  <div class="code-difference-node__children">
-                    {% for group2 in group1.children %}
-                      <details class="code-difference-node">
-                        <summary><span><small>{{ group_labels.1 }}</small><strong>{{ group2.name }}</strong></span><span class="code-alert-count {% if not group2.missing_codes %}is-clear{% endif %}"><strong>{{ group2.missing_codes }}/{{ group2.total_codes }}</strong> sin contar</span></summary>
-                        <div class="code-difference-node__children">
-                          {% for group3 in group2.children %}
-                            <details class="code-difference-node">
-                              <summary><span><small>{{ group_labels.2 }}</small><strong>{{ group3.name }}</strong></span><span class="code-alert-count {% if not group3.missing_codes %}is-clear{% endif %}"><strong>{{ group3.missing_codes }}/{{ group3.total_codes }}</strong> sin contar</span></summary>
-                              <div class="code-difference-locations">
-                                {% for location in group3.locations %}
-                                  {% if location.missing_codes %}
-                                    <details class="code-difference-location">
-                                      <summary><span><small>{% if location.leaf_value %}{{ leaf_label }} {{ location.leaf_value }} · {% endif %}Ubicación</small><strong>{{ location.code }}</strong></span><span class="code-alert-count"><strong>{{ location.missing_codes }}/{{ location.total_codes }}</strong> sin contar</span></summary>
-                                      <div class="code-difference-codes">{% for code in location.missing_code_list %}<span>{{ code }}</span>{% endfor %}</div>
-                                    </details>
-                                  {% else %}
-                                    <div class="code-difference-location is-clear"><span><small>{% if location.leaf_value %}{{ leaf_label }} {{ location.leaf_value }} · {% endif %}Ubicación</small><strong>{{ location.code }}</strong></span><span class="code-alert-count is-clear"><strong>0/{{ location.total_codes }}</strong> sin contar</span></div>
-                                  {% endif %}
-                                {% endfor %}
-                              </div>
-                            </details>
-                          {% endfor %}
-                        </div>
-                      </details>
-                    {% endfor %}
-                  </div>
-                </details>
-              {% endfor %}
+          <section class="progress-explorer code-difference-explorer" data-code-difference-explorer
+            data-scope-name="{{ scope.name }}" data-scope-label="{{ scope_label }}"
+            data-group1-label="{{ group_labels.0 }}" data-group2-label="{{ group_labels.1 }}"
+            data-group3-label="{{ group_labels.2 }}" data-leaf-label="{{ leaf_label }}">
+            <header class="progress-explorer__heading">
+              <div><p class="count-eyebrow">Recorrido horizontal</p><h2>{{ scope_label }} {{ scope.name }}</h2><p>Selecciona cada columna para avanzar hasta las ubicaciones.</p></div>
+              <span class="code-alert-count {% if not scope.missing_codes %}is-clear{% endif %}"><strong>{{ scope.missing_codes }}/{{ scope.total_codes }}</strong> sin contar</span>
+            </header>
+            <nav class="progress-explorer__trail" aria-label="Ruta seleccionada">
+              <button type="button" data-difference-back>{{ scope_label }} {{ scope.name }}</button><i>/</i>
+              <button type="button" data-difference-trail="group1" disabled>{{ group_labels.0 }} —</button><i>/</i>
+              <button type="button" data-difference-trail="group2" disabled>{{ group_labels.1 }} —</button><i>/</i>
+              <button type="button" data-difference-trail="group3" disabled>{{ group_labels.2 }} —</button>
+            </nav>
+            <div class="progress-browser" data-difference-browser>
+              <section class="progress-browser__column progress-browser__column--aisles">
+                <header><span>1</span><div><h3>{{ group_labels.0 }}</h3><small data-difference-group1-count></small></div></header>
+                <label class="progress-browser__search"><span aria-hidden="true">⌕</span><input type="search" placeholder="Buscar {{ group_labels.0|lower }}" aria-label="Buscar {{ group_labels.0|lower }}" data-difference-search></label>
+                <div class="progress-browser__list" data-difference-list="group1"></div>
+              </section>
+              <section class="progress-browser__column" data-difference-column="group2">
+                <header><span>2</span><div><h3>{{ group_labels.1 }}</h3><small>Elige una opción</small></div></header>
+                <div class="progress-browser__list" data-difference-list="group2"></div>
+              </section>
+              <section class="progress-browser__column" data-difference-column="group3">
+                <header><span>3</span><div><h3>{{ group_labels.2 }}</h3><small>Elige una opción</small></div></header>
+                <div class="progress-browser__list" data-difference-list="group3"></div>
+              </section>
+              <section class="progress-browser__column progress-browser__column--locations" data-difference-column="locations" aria-live="polite">
+                <header><span>4</span><div><h3>Ubicaciones</h3><small data-difference-location-count>Elige una opción</small></div></header>
+                <div class="progress-browser__list" data-difference-list="locations"></div>
+              </section>
             </div>
-          </details>
+          </section>
         {% endfor %}
-      </section>
+      </div>
+      {{ scopes|json_script:"code-differences-data" }}
+      <script src="{% static 'conteo/js/progress_differences.js' %}?v=20260925-1" defer></script>
     {% elif not current_rge %}
       <section class="queue-empty"><span>!</span><h2>No hay un RGE vigente</h2><p>Carga el RGE para identificar los códigos que aún no han sido contados.</p></section>
     {% else %}

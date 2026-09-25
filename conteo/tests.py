@@ -645,7 +645,9 @@ class DifferenceAccessTests(TestCase):
         self.assertEqual(locations["A01I-B01"]["missing_code_list"], ["FALTA-UNO"])
         self.assertEqual(locations["A01I-B02"]["missing_code_list"], ["FALTA-DOS"])
         self.assertContains(response, "2/3")
-        self.assertContains(response, "Difierencias")
+        self.assertContains(response, "Diferencias")
+        self.assertContains(response, "data-code-difference-explorer")
+        self.assertContains(response, "conteo/js/progress_differences.js")
 
     def test_supervisor_can_open_upload_and_download_template(self):
         self.client.force_login(self.user)

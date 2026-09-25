@@ -89,7 +89,7 @@
             <div class="sidebar-subnav">
               <a class="sidebar-subnav__link {% if request.resolver_match.url_name == 'progress_general' %}is-active{% endif %}" href="{% url 'conteo:progress_general' %}"><span>Avance general</span></a>
               <a class="sidebar-subnav__link {% if request.resolver_match.url_name == 'progress' %}is-active{% endif %}" href="{% url 'conteo:progress' %}"><span>Avance detallado</span></a>
-              <a class="sidebar-subnav__link {% if request.resolver_match.url_name == 'progress_differences' %}is-active{% endif %}" href="{% url 'conteo:progress_differences' %}"><span>Difierencias</span></a>
+              <a class="sidebar-subnav__link {% if request.resolver_match.url_name == 'progress_differences' %}is-active{% endif %}" href="{% url 'conteo:progress_differences' %}"><span>Diferencias</span></a>
             </div>
           </details>
 
