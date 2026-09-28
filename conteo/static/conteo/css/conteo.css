@@ -157,15 +157,15 @@
 .recount-selected-by strong { color: #344a54; font-size: 10px; }
 .recount-selected-by small { margin-top: 3px; color: #87949a; font-size: 9px; }
 .recount-warehouses { display: grid; grid-template-columns: repeat(2, minmax(116px, 1fr)) minmax(70px, auto); align-items: start; gap: 7px; width: 330px; }
-.recount-warehouse-control { display: grid; grid-template-rows: 40px 14px 27px; gap: 5px; min-width: 0; }
+.recount-warehouse-control { display: grid; grid-template-rows: 40px 13px 26px; gap: 4px; min-width: 0; }
 .recount-warehouse-control > .recount-warehouse { grid-row: 1; }
 .recount-warehouse-control > .recount-warehouse-state { grid-row: 2; }
 .recount-warehouse-control form { grid-row: 3; margin: 0; }
-.recount-start-button { width: 100%; padding: 5px 8px; border: 1px solid #a9cbc7; border-radius: 6px; color: #17695d; background: #f2fbf8; font-size: 9px; font-weight: 800; cursor: pointer; }
+.recount-start-button { width: 100%; height: 26px; overflow: hidden; padding: 0 7px; border: 1px solid #a9cbc7; border-radius: 6px; color: #17695d; background: #f2fbf8; font-size: 8px; font-weight: 800; line-height: 1; text-overflow: ellipsis; white-space: nowrap; cursor: pointer; }
 .recount-start-button:hover { background: #dcf4ed; }
-.recount-finish-button { width: 100%; padding: 5px 8px; border: 1px solid #afd0b8; border-radius: 6px; color: #267044; background: #edf8ef; font-size: 9px; font-weight: 800; cursor: pointer; }
+.recount-finish-button { width: 100%; height: 26px; overflow: hidden; padding: 0 7px; border: 1px solid #afd0b8; border-radius: 6px; color: #267044; background: #edf8ef; font-size: 8px; font-weight: 800; line-height: 1; text-overflow: ellipsis; white-space: nowrap; cursor: pointer; }
 .recount-finish-button:hover { background: #d9f0de; }
-.recount-warehouse-state { color: #87949a; font-size: 9px; font-weight: 700; text-align: center; }
+.recount-warehouse-state { overflow: hidden; color: #87949a; font-size: 8px; font-weight: 700; line-height: 13px; text-align: center; text-overflow: ellipsis; white-space: nowrap; }
 .recount-warehouse-state.is-started { color: #17695d; }
 .recount-warehouse-state.is-finished { color: #267044; }
 .recount-finish-alert { margin: 0 18px 14px; padding: 10px 13px; border: 1px solid #bedcc7; border-radius: 8px; color: #285e38; background: #eff9f1; font-size: 10px; line-height: 1.5; }

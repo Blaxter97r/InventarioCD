@@ -1,7 +1,7 @@
 {% extends "layouts/app_shell.html" %}
 {% load static %}
 {% block title %}Reconteos | Inventario 2026{% endblock %}
-{% block extra_css %}<link rel="stylesheet" href="{% static 'conteo/css/conteo.css' %}?v=20260927-1" />{% endblock %}
+{% block extra_css %}<link rel="stylesheet" href="{% static 'conteo/css/conteo.css' %}?v=20260927-2" />{% endblock %}
 {% block page_name %}Conteo · Reconteos{% endblock %}
 {% block page_content %}
   <div class="count-page">
@@ -29,11 +29,11 @@
                     {% elif warehouse.inicio %}
                       <span class="recount-warehouse-state is-started" title="Iniciado el {{ warehouse.inicio.fecha_inicio|date:'d/m/Y H:i' }} por {{ warehouse.inicio.iniciado_por.username }}">● En reconteo · {{ warehouse.inicio.fecha_inicio|date:"d/m H:i" }}</span>
                       <form method="post" action="{% url 'conteo:finish_recount_warehouse' load.pk warehouse.key %}">
-                        {% csrf_token %}<button class="recount-finish-button" type="submit">Finalizar reconteo</button>
+                        {% csrf_token %}<button class="recount-finish-button" type="submit" aria-label="Finalizar reconteo">Finalizar</button>
                       </form>
                     {% else %}
                       <form method="post" action="{% url 'conteo:start_recount_warehouse' load.pk warehouse.key %}">
-                        {% csrf_token %}<button class="recount-start-button" type="submit">Iniciar reconteo</button>
+                        {% csrf_token %}<button class="recount-start-button" type="submit" aria-label="Iniciar reconteo">Iniciar</button>
                       </form>
                     {% endif %}
                   {% else %}
