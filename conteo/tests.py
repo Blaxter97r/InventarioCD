@@ -36,6 +36,7 @@ from .models import (
     InicioReconteoBodega,
     ValidacionUbicacion,
 )
+from .progress_reports import duplicate_scan_rows
 from .recount_reports import (
     EXTRA_LOCATION_ROWS,
     _combined_inventory_table,
@@ -400,6 +401,7 @@ class DifferenceAccessTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, "data-difference-report-open")
         self.assertContains(response, "data-difference-report-modal")
+        self.assertContains(response, "Posibles escaneos duplicados")
         self.assertContains(response, reverse("conteo:filtered_differences_pdf"))
         self.assertContains(response, "difference_report_modal.js")
         central = response.context["difference_report_filters"][0]
@@ -460,7 +462,7 @@ class DifferenceAccessTests(TestCase):
         self.assertIn("KIBCF0011", text)
         self.assertNotIn("OTRO-PASILLO", text)
 
-    def test_filtered_secondary_pdf_supports_multiple_aisles_and_zero_count(self):
+    def test_filtered_secondary_pdf_supports_multiple_aisles_and_omits_zero_count(self):
         for location in ("E08-045Y", "E09-045Y"):
             Ubicacion.objects.create(
                 ubicacion=location,
@@ -483,6 +485,13 @@ class DifferenceAccessTests(TestCase):
         DetalleConteoInventario.objects.create(
             carga=count_load,
             bodega="CENTRAL",
+            ubicacion="E08-045Y",
+            codigo="SIN-CONTAR",
+            cantidad=0,
+        )
+        DetalleConteoInventario.objects.create(
+            carga=count_load,
+            bodega="CENTRAL",
             ubicacion="E09-045Y",
             codigo="DIF-009",
             cantidad=3,
@@ -500,11 +509,10 @@ class DifferenceAccessTests(TestCase):
         text = "\n".join(page.extract_text() or "" for page in PdfReader(BytesIO(response.content)).pages)
         self.assertIn("Cantidad RGE", text)
         self.assertIn("Cantidad contada", text)
-        self.assertIn("SIN-CONTAR", text)
-        self.assertIn("E08-045Y", text)
+        self.assertNotIn("SIN-CONTAR", text)
+        self.assertNotIn("E08-045Y", text)
         self.assertIn("DIF-009", text)
         self.assertIn("E09-045Y", text)
-        self.assertIn("-1", text)
         self.assertIn("-2", text)
 
         invalid = self.client.get(reverse("conteo:filtered_differences_pdf"), {
@@ -514,6 +522,61 @@ class DifferenceAccessTests(TestCase):
             "pasillo": ["99"],
         })
         self.assertEqual(invalid.status_code, 404)
+
+    def test_duplicate_scan_pdf_groups_exact_repeated_scans(self):
+        for location in ("A01I-A01", "A02I-A01"):
+            Ubicacion.objects.create(
+                ubicacion=location,
+                bodega="BODEGA CENTRAL",
+                sector="1",
+                tipo="PRIMARIO",
+            )
+        count_load = CargaConteoInventario.objects.create(
+            archivo_nombre="conteo-duplicados.xlsx", cargado_por=self.admin
+        )
+        for code, location, quantity in (
+            ("DUP-001", "A01I-A01", 2),
+            ("DUP-001", "A01I-A01", 2),
+            ("DUP-001", "A01I-A01", 3),
+            ("UNICO-001", "A01I-A01", 2),
+            ("OTRO-PASILLO", "A02I-A01", 4),
+            ("OTRO-PASILLO", "A02I-A01", 4),
+        ):
+            DetalleConteoInventario.objects.create(
+                carga=count_load,
+                bodega="CENTRAL",
+                ubicacion=location,
+                codigo=code,
+                cantidad=quantity,
+            )
+        self.client.force_login(self.user)
+
+        rows = duplicate_scan_rows("BODEGA CENTRAL", "PRIMARIO", "A", ["01"])
+        self.assertEqual(rows, [{
+            "location": "A01I-A01",
+            "code": "DUP-001",
+            "counted_quantity": Decimal("2"),
+            "scan_count": 2,
+            "duplicate_count": 1,
+        }])
+
+        response = self.client.get(reverse("conteo:filtered_differences_pdf"), {
+            "reporte": "duplicados",
+            "bodega": "BODEGA CENTRAL",
+            "tipo": "PRIMARIO",
+            "piso": "A",
+            "pasillo": ["01"],
+        })
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("posibles_duplicados", response["Content-Disposition"])
+        text = "\n".join(page.extract_text() or "" for page in PdfReader(BytesIO(response.content)).pages)
+        self.assertIn("Posibles escaneos duplicados", text)
+        self.assertIn("Veces escaneado", text)
+        self.assertIn("DUP-001", text)
+        self.assertIn("A01I-A01", text)
+        self.assertNotIn("UNICO-001", text)
+        self.assertNotIn("OTRO-PASILLO", text)
 
     def test_secondary_modify_rge_flag_exports_rge_codes_at_zero(self):
         source = "E08-045Y"

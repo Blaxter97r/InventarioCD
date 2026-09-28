@@ -23,10 +23,12 @@
   const aisleContainer = modal.querySelector("[data-report-aisles]");
   const selectAll = modal.querySelector("[data-report-select-all]");
   const submitButton = modal.querySelector("[data-report-submit]");
+  const reportInputs = [...modal.querySelectorAll("input[name='reporte']")];
   const previewTitle = modal.querySelector("[data-report-preview-title]");
   const previewDetail = modal.querySelector("[data-report-preview-detail]");
   const primaryFormat = modal.querySelector("[data-report-format-primary]");
   const secondaryFormat = modal.querySelector("[data-report-format-secondary]");
+  const duplicatesFormat = modal.querySelector("[data-report-format-duplicates]");
   const initial = {
     warehouse: openButton.dataset.selectedWarehouse,
     type: openButton.dataset.selectedType,
@@ -57,19 +59,23 @@
     const checked = aisleInputs().filter((input) => input.checked);
     const inputs = aisleInputs();
     const locationCount = checked.reduce((total, input) => total + Number(input.dataset.locationCount || 0), 0);
+    const report = reportInputs.find((input) => input.checked)?.value || "diferencias";
+    const isDuplicates = report === "duplicados";
 
     selectAll.checked = Boolean(inputs.length) && checked.length === inputs.length;
     selectAll.indeterminate = checked.length > 0 && checked.length < inputs.length;
     submitButton.disabled = !checked.length;
-    primaryFormat.hidden = type?.value !== "PRIMARIO";
-    secondaryFormat.hidden = type?.value !== "SECUNDARIO";
+    primaryFormat.hidden = isDuplicates || type?.value !== "PRIMARIO";
+    secondaryFormat.hidden = isDuplicates || type?.value !== "SECUNDARIO";
+    duplicatesFormat.hidden = !isDuplicates;
 
     if (!warehouse || !type || !scope || !checked.length) {
       previewTitle.textContent = "Completa los filtros";
       previewDetail.textContent = "Selecciona al menos un pasillo para habilitar la descarga.";
       return;
     }
-    previewTitle.textContent = `${warehouse.label} · ${type.label} · ${type.scope_label} ${scope.value}`;
+    const reportLabel = isDuplicates ? "Posibles duplicados" : "Diferencias";
+    previewTitle.textContent = `${reportLabel} · ${warehouse.label} · ${type.label} · ${type.scope_label} ${scope.value}`;
     previewDetail.textContent = `${checked.length} pasillo${checked.length === 1 ? "" : "s"} · ${locationCount} ubicaciones incluidas`;
   };
 
@@ -127,6 +133,7 @@
   warehouseSelect.addEventListener("change", () => renderTypes());
   typeSelect.addEventListener("change", () => renderScopes());
   scopeSelect.addEventListener("change", renderAisles);
+  reportInputs.forEach((input) => input.addEventListener("change", updatePreview));
   selectAll.addEventListener("change", () => {
     aisleInputs().forEach((input) => { input.checked = selectAll.checked; });
     updatePreview();

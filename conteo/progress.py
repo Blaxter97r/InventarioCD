@@ -271,14 +271,21 @@ def _difference_report_filters_from_expected(expected_by_config):
 
 def build_difference_report_filters():
     current_rge = CargaRGE.objects.first()
-    rge_locations = set()
+    current_count = CargaConteoInventario.objects.first()
+    source_locations = set()
     if current_rge:
-        rge_locations = {
+        source_locations.update({
             _normalize(value)
             for value in DetalleRGE.objects.filter(carga=current_rge)
             .values_list("ubicacion", flat=True).order_by().distinct()
-        }
-    expected_by_config, _, _ = _configured_locations(rge_locations)
+        })
+    if current_count:
+        source_locations.update({
+            _normalize(value)
+            for value in DetalleConteoInventario.objects.filter(carga=current_count)
+            .values_list("ubicacion", flat=True).order_by().distinct()
+        })
+    expected_by_config, _, _ = _configured_locations(source_locations)
     return _difference_report_filters_from_expected(expected_by_config)
 
 
@@ -491,7 +498,7 @@ def build_code_differences_dashboard(
         "selected_warehouse": warehouse,
         "selected_type": location_type,
         "selectors": selectors,
-        "difference_report_filters": _difference_report_filters_from_expected(expected_by_config),
+        "difference_report_filters": build_difference_report_filters(),
         "scope_label": config["scope_label"],
         "group_labels": [label for _, label in config["groups"]],
         "leaf_label": config["leaf_label"],

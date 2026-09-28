@@ -1,7 +1,7 @@
 {% extends "layouts/app_shell.html" %}
 {% load static %}
 {% block title %}Diferencias del conteo | Inventario 2026{% endblock %}
-{% block extra_css %}<link rel="stylesheet" href="{% static 'conteo/css/conteo.css' %}?v=20260927-2" />{% endblock %}
+{% block extra_css %}<link rel="stylesheet" href="{% static 'conteo/css/conteo.css' %}?v=20260927-3" />{% endblock %}
 {% block page_name %}Conteo · Avance · Diferencias{% endblock %}
 {% block page_content %}
   <div class="count-page progress-page code-differences-page">
@@ -138,6 +138,14 @@
       </header>
 
       <div class="difference-report-modal__body">
+        <fieldset class="difference-report-kind">
+          <legend>Tipo de reporte</legend>
+          <div>
+            <label><input type="radio" name="reporte" value="diferencias" checked><span><strong>Diferencias de conteo</strong><small>Compara el RGE contra el conteo vigente.</small></span></label>
+            <label><input type="radio" name="reporte" value="duplicados"><span><strong>Posibles escaneos duplicados</strong><small>Busca registros exactos repetidos en el conteo.</small></span></label>
+          </div>
+        </fieldset>
+
         <div class="difference-report-steps" aria-label="Filtros del reporte">
           <label><span><b>1</b>Bodega</span><select name="bodega" data-report-warehouse required></select></label>
           <label><span><b>2</b>Tipo de ubicación</span><select name="tipo" data-report-type required></select></label>
@@ -162,6 +170,7 @@
           <strong>El PDF se adapta automáticamente</strong>
           <p data-report-format-primary><b>Primario:</b> ubicación, avance de códigos contados y códigos pendientes.</p>
           <p data-report-format-secondary hidden><b>Secundario:</b> ubicación, código, cantidades RGE y contada, y diferencia.</p>
+          <p data-report-format-duplicates hidden><b>Duplicados:</b> ubicación, código, cantidad repetida, veces escaneado y posibles registros duplicados.</p>
         </div>
       </div>
 
@@ -175,5 +184,5 @@
     </form>
   </dialog>
   {{ difference_report_filters|json_script:"difference-report-filter-data" }}
-  <script src="{% static 'conteo/js/difference_report_modal.js' %}?v=20260927-1" defer></script>
+  <script src="{% static 'conteo/js/difference_report_modal.js' %}?v=20260927-2" defer></script>
 {% endblock %}

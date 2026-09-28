@@ -1,4 +1,4 @@
-from collections import defaultdict
+from collections import Counter, defaultdict
 from decimal import Decimal
 from io import BytesIO
 from xml.sax.saxutils import escape
@@ -24,21 +24,25 @@ from .models import ValidacionUbicacion
 from .progress import LOCATION_CONFIGS, _normalize, _parse_location
 
 
-def _difference_report_locations(warehouse, location_type, scope, aisles):
+def _difference_report_locations(
+    warehouse, location_type, scope, aisles, *, require_rge=True
+):
     warehouse = _normalize(warehouse)
     location_type = _normalize(location_type)
     scope = _normalize(scope)
     aisles = {_normalize(aisle) for aisle in aisles if _normalize(aisle)}
     config = LOCATION_CONFIGS.get((warehouse, location_type))
     current_rge = CargaRGE.objects.first()
-    if not config or not scope or not aisles or not current_rge:
+    if not config or not scope or not aisles or (require_rge and not current_rge):
         return set()
 
-    rge_locations = {
-        _normalize(location)
-        for location in DetalleRGE.objects.filter(carga=current_rge)
-        .values_list("ubicacion", flat=True).order_by().distinct()
-    }
+    rge_locations = set()
+    if require_rge:
+        rge_locations = {
+            _normalize(location)
+            for location in DetalleRGE.objects.filter(carga=current_rge)
+            .values_list("ubicacion", flat=True).order_by().distinct()
+        }
 
     locations = set()
     for location in Ubicacion.objects.filter(
@@ -48,7 +52,7 @@ def _difference_report_locations(warehouse, location_type, scope, aisles):
         dimensions = _parse_location(normalized, config)
         if (
             dimensions
-            and normalized in rge_locations
+            and (not require_rge or normalized in rge_locations)
             and dimensions[config["scope_key"]] == scope
             and dimensions["pasillo"] in aisles
         ):
@@ -142,8 +146,12 @@ def secondary_quantity_difference_rows_for_aisles(warehouse, scope, aisles):
     rows = []
     for location, code in sorted(rge_keys_with_quantity):
         key = (location, code)
+        if key not in counted_quantities:
+            continue
         rge_quantity = rge_quantities[key]
-        counted_quantity = counted_quantities.get(key, Decimal(0))
+        counted_quantity = counted_quantities[key]
+        if counted_quantity == 0:
+            continue
         if rge_quantity == counted_quantity:
             continue
         rows.append({
@@ -160,7 +168,42 @@ def secondary_quantity_difference_rows(warehouse, scope, aisle):
     return secondary_quantity_difference_rows_for_aisles(warehouse, scope, [aisle])
 
 
-def build_filtered_difference_pdf(rows, warehouse, location_type, scope, aisles):
+def duplicate_scan_rows(warehouse, location_type, scope, aisles):
+    locations = _difference_report_locations(
+        warehouse, location_type, scope, aisles, require_rge=False
+    )
+    current_count = CargaConteoInventario.objects.first()
+    if not locations or not current_count:
+        return []
+
+    scans = Counter()
+    counted_rows = (
+        DetalleConteoInventario.objects.filter(carga=current_count)
+        .annotate(ubicacion_normalizada=Upper("ubicacion"))
+        .filter(ubicacion_normalizada__in=locations)
+        .values_list("ubicacion_normalizada", "codigo", "cantidad")
+    )
+    for location, code, quantity in counted_rows:
+        normalized_code = _normalize(code)
+        if normalized_code:
+            scans[(_normalize(location), normalized_code, quantity)] += 1
+
+    return [
+        {
+            "location": location,
+            "code": code,
+            "counted_quantity": quantity,
+            "scan_count": scan_count,
+            "duplicate_count": scan_count - 1,
+        }
+        for (location, code, quantity), scan_count in sorted(scans.items())
+        if scan_count > 1
+    ]
+
+
+def build_filtered_difference_pdf(
+    rows, warehouse, location_type, scope, aisles, report_kind="differences"
+):
     warehouse = _normalize(warehouse)
     location_type = _normalize(location_type)
     scope = _normalize(scope)
@@ -177,7 +220,11 @@ def build_filtered_difference_pdf(rows, warehouse, location_type, scope, aisles)
         rightMargin=12 * mm,
         topMargin=11 * mm,
         bottomMargin=13 * mm,
-        title=f"Diferencias {location_type.title()} - {warehouse.title()}",
+        title=(
+            f"Posibles duplicados - {warehouse.title()}"
+            if report_kind == "duplicates"
+            else f"Diferencias {location_type.title()} - {warehouse.title()}"
+        ),
         author="Inventario 2026",
     )
     styles = getSampleStyleSheet()
@@ -218,14 +265,21 @@ def build_filtered_difference_pdf(rows, warehouse, location_type, scope, aisles)
     generated_at = timezone.localtime().strftime("%d/%m/%Y %H:%M")
     scope_text = f"{config['scope_label']} {scope}"
     aisle_text = ", ".join(aisles)
-    purpose = (
-        "Validar códigos esperados en el RGE que aún no aparecen en el conteo vigente."
-        if location_type == "PRIMARIO"
-        else "Validar diferencias de cantidad entre el RGE y el conteo vigente por ubicación."
-    )
+    if report_kind == "duplicates":
+        report_title = "Posibles escaneos duplicados"
+        purpose = (
+            "Revisar registros repetidos con la misma ubicación, el mismo código y "
+            "la misma cantidad contada."
+        )
+    elif location_type == "PRIMARIO":
+        report_title = "Diferencias de ubicaciones primarias"
+        purpose = "Validar códigos esperados en el RGE que aún no aparecen en el conteo vigente."
+    else:
+        report_title = "Diferencias de ubicaciones secundarias"
+        purpose = "Validar cantidades contadas que no coinciden con el RGE por ubicación."
     story = [
         Paragraph("INVENTARIO 2026 · REPORTE DE VALIDACIÓN", eyebrow),
-        Paragraph(f"Diferencias de ubicaciones {location_type.lower()}", title),
+        Paragraph(report_title, title),
         Paragraph(
             f"<b>{escape(warehouse.title())}</b> · {escape(scope_text)} · "
             f"Pasillo(s) {escape(aisle_text)}<br/>{escape(purpose)}",
@@ -241,7 +295,26 @@ def build_filtered_difference_pdf(rows, warehouse, location_type, scope, aisles)
         Spacer(1, 6 * mm),
     ]
 
-    if location_type == "PRIMARIO":
+    if report_kind == "duplicates":
+        data = [[
+            "Ubicación",
+            "Código",
+            "Cantidad contada",
+            "Veces escaneado",
+            "Posibles duplicados",
+        ]]
+        data.extend([
+            [
+                row["location"],
+                row["code"],
+                _quantity_text(row["counted_quantity"]),
+                str(row["scan_count"]),
+                str(row["duplicate_count"]),
+            ]
+            for row in rows
+        ])
+        widths = (58 * mm, 72 * mm, 48 * mm, 43 * mm, 43 * mm)
+    elif location_type == "PRIMARIO":
         data = [["Ubicación", "Códigos contados", "Códigos no contados"]]
         data.extend([
             [
@@ -285,7 +358,7 @@ def build_filtered_difference_pdf(rows, warehouse, location_type, scope, aisles)
         ("LEFTPADDING", (0, 0), (-1, -1), 6),
         ("RIGHTPADDING", (0, 0), (-1, -1), 6),
     ]
-    if location_type == "SECUNDARIO" and rows:
+    if (report_kind == "duplicates" or location_type == "SECUNDARIO") and rows:
         table_style.append(("ALIGN", (2, 1), (4, -1), "RIGHT"))
     if not rows:
         table_style.append(("SPAN", (0, 1), (-1, 1)))

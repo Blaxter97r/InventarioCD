@@ -48,6 +48,7 @@ from .progress import (
 from .progress_reports import (
     build_filtered_difference_pdf,
     build_secondary_quantity_difference_pdf,
+    duplicate_scan_rows,
     primary_code_difference_rows,
     rge_modification_rows,
     secondary_quantity_difference_rows,
@@ -856,6 +857,10 @@ def progress_differences_view(request):
 
 @login_required
 def filtered_differences_pdf_view(request):
+    requested_report = request.GET.get("reporte", "diferencias").strip().lower()
+    if requested_report not in {"diferencias", "duplicados"}:
+        raise Http404("El tipo de reporte solicitado no es válido.")
+    report_kind = "duplicates" if requested_report == "duplicados" else "differences"
     warehouse = _normalize(request.GET.get("bodega", ""))
     location_type = _normalize(request.GET.get("tipo", ""))
     scope = _normalize(request.GET.get("piso", ""))
@@ -891,17 +896,20 @@ def filtered_differences_pdf_view(request):
     if not scope_option or not aisles or not set(aisles).issubset(available_aisles):
         raise Http404("Selecciona una bodega, un tipo, un piso o zona y al menos un pasillo válido.")
 
-    if location_type == "PRIMARIO":
+    if report_kind == "duplicates":
+        rows = duplicate_scan_rows(warehouse, location_type, scope, aisles)
+    elif location_type == "PRIMARIO":
         rows = primary_code_difference_rows(warehouse, scope, aisles)
     else:
         rows = secondary_quantity_difference_rows_for_aisles(warehouse, scope, aisles)
     pdf = build_filtered_difference_pdf(
-        rows, warehouse, location_type, scope, aisles
+        rows, warehouse, location_type, scope, aisles, report_kind
     )
     response = HttpResponse(pdf, content_type="application/pdf")
     aisle_suffix = "-".join(aisles) if len(aisles) <= 4 else "varios-pasillos"
+    report_prefix = "posibles_duplicados" if report_kind == "duplicates" else "diferencias"
     response["Content-Disposition"] = (
-        f'attachment; filename="diferencias_{slugify(location_type)}_'
+        f'attachment; filename="{report_prefix}_{slugify(location_type)}_'
         f'{slugify(warehouse)}_{slugify(scope)}_{slugify(aisle_suffix)}.pdf"'
     )
     return response

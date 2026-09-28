@@ -498,6 +498,18 @@
 .difference-report-modal header > button:hover { color: var(--count-navy); background: #e2eaea; }
 .difference-report-modal header > button svg { width: 16px; fill: none; stroke: currentColor; stroke-linecap: round; stroke-width: 1.8; }
 .difference-report-modal__body { overflow-y: auto; padding: 21px 24px; }
+.difference-report-kind { margin: 0 0 18px; padding: 0; border: 0; }
+.difference-report-kind legend { margin-bottom: 8px; color: #52666e; font-size: 9px; font-weight: 800; }
+.difference-report-kind > div { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 9px; }
+.difference-report-kind label { position: relative; cursor: pointer; }
+.difference-report-kind input { position: absolute; width: 1px; height: 1px; opacity: 0; }
+.difference-report-kind label > span { display: block; min-height: 61px; padding: 12px 13px; border: 1px solid #dce5e7; border-radius: 9px; background: #fafcfc; }
+.difference-report-kind label:hover > span { border-color: #9ccbc5; }
+.difference-report-kind input:checked + span { border-color: #55ad9f; background: #ecf8f5; box-shadow: 0 0 0 2px rgba(8, 127, 118, .06); }
+.difference-report-kind input:focus-visible + span { outline: 2px solid #69b5aa; outline-offset: 2px; }
+.difference-report-kind strong, .difference-report-kind small { display: block; }
+.difference-report-kind strong { color: #304a51; font-size: 9px; }
+.difference-report-kind small { margin-top: 4px; color: #829094; font-size: 7px; line-height: 1.4; }
 .difference-report-steps { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
 .difference-report-steps label { display: grid; gap: 7px; }
 .difference-report-steps label > span, .difference-report-aisles legend { display: flex; align-items: center; gap: 7px; color: #52666e; font-size: 9px; font-style: normal; font-weight: 800; }
@@ -695,6 +707,7 @@
   .difference-report-modal header { padding: 18px 16px 15px; }
   .difference-report-modal__icon { display: none; }
   .difference-report-modal__body { padding: 17px 16px; }
+  .difference-report-kind > div { grid-template-columns: 1fr; }
   .difference-report-steps { grid-template-columns: 1fr; }
   .difference-report-aisles__heading { align-items: flex-start; flex-direction: column; }
   .difference-report-aisle-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
