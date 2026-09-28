@@ -373,6 +373,148 @@ class DifferenceAccessTests(TestCase):
             differences_page, reverse("conteo:secondary_quantity_differences_pdf")
         )
 
+    def test_difference_report_modal_exposes_dynamic_filters(self):
+        for location, location_type in (
+            ("A01I-A01", "PRIMARIO"),
+            ("E08-045Y", "SECUNDARIO"),
+        ):
+            Ubicacion.objects.create(
+                ubicacion=location,
+                bodega="BODEGA CENTRAL",
+                sector="1",
+                tipo=location_type,
+            )
+        rge_load = CargaRGE.objects.create(
+            archivo_nombre="rge.xlsx", cargado_por=self.admin
+        )
+        DetalleRGE.objects.create(
+            carga=rge_load, codigo="PRI-001", ubicacion="A01I-A01", cantidad=1
+        )
+        DetalleRGE.objects.create(
+            carga=rge_load, codigo="SEC-001", ubicacion="E08-045Y", cantidad=1
+        )
+        self.client.force_login(self.user)
+
+        response = self.client.get(reverse("conteo:progress_differences"))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "data-difference-report-open")
+        self.assertContains(response, "data-difference-report-modal")
+        self.assertContains(response, reverse("conteo:filtered_differences_pdf"))
+        self.assertContains(response, "difference_report_modal.js")
+        central = response.context["difference_report_filters"][0]
+        self.assertEqual(central["value"], "BODEGA CENTRAL")
+        self.assertEqual(
+            [item["value"] for item in central["types"]],
+            ["PRIMARIO", "SECUNDARIO"],
+        )
+        self.assertEqual(central["types"][0]["scopes"][0]["aisles"][0], {
+            "value": "01", "location_count": 1,
+        })
+
+    def test_filtered_primary_pdf_lists_missing_codes_for_selected_aisle(self):
+        for location in ("A01I-A01", "A02I-A01"):
+            Ubicacion.objects.create(
+                ubicacion=location,
+                bodega="BODEGA CENTRAL",
+                sector="1",
+                tipo="PRIMARIO",
+            )
+        rge_load = CargaRGE.objects.create(
+            archivo_nombre="rge-primario.xlsx", cargado_por=self.admin
+        )
+        for code, location in (
+            ("CONTADO-001", "A01I-A01"),
+            ("KIBCF0011", "A01I-A01"),
+            ("OTRO-PASILLO", "A02I-A01"),
+        ):
+            DetalleRGE.objects.create(
+                carga=rge_load, codigo=code, ubicacion=location, cantidad=1
+            )
+        count_load = CargaConteoInventario.objects.create(
+            archivo_nombre="conteo.xlsx", cargado_por=self.admin
+        )
+        DetalleConteoInventario.objects.create(
+            carga=count_load,
+            bodega="CENTRAL",
+            ubicacion="A01I-A01",
+            codigo="CONTADO-001",
+            cantidad=1,
+        )
+        self.client.force_login(self.user)
+
+        response = self.client.get(reverse("conteo:filtered_differences_pdf"), {
+            "bodega": "BODEGA CENTRAL",
+            "tipo": "PRIMARIO",
+            "piso": "A",
+            "pasillo": ["01"],
+        })
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response["Content-Type"], "application/pdf")
+        text = "\n".join(page.extract_text() or "" for page in PdfReader(BytesIO(response.content)).pages)
+        self.assertIn("REPORTE DE VALIDACI", text)
+        self.assertGreaterEqual(text.count("contados"), 2)
+        self.assertIn("A01I-A01", text)
+        self.assertIn("1/2", text)
+        self.assertIn("KIBCF0011", text)
+        self.assertNotIn("OTRO-PASILLO", text)
+
+    def test_filtered_secondary_pdf_supports_multiple_aisles_and_zero_count(self):
+        for location in ("E08-045Y", "E09-045Y"):
+            Ubicacion.objects.create(
+                ubicacion=location,
+                bodega="BODEGA CENTRAL",
+                sector="8",
+                tipo="SECUNDARIO",
+            )
+        rge_load = CargaRGE.objects.create(
+            archivo_nombre="rge-secundario.xlsx", cargado_por=self.admin
+        )
+        DetalleRGE.objects.create(
+            carga=rge_load, codigo="SIN-CONTAR", ubicacion="E08-045Y", cantidad=1
+        )
+        DetalleRGE.objects.create(
+            carga=rge_load, codigo="DIF-009", ubicacion="E09-045Y", cantidad=5
+        )
+        count_load = CargaConteoInventario.objects.create(
+            archivo_nombre="conteo.xlsx", cargado_por=self.admin
+        )
+        DetalleConteoInventario.objects.create(
+            carga=count_load,
+            bodega="CENTRAL",
+            ubicacion="E09-045Y",
+            codigo="DIF-009",
+            cantidad=3,
+        )
+        self.client.force_login(self.user)
+
+        response = self.client.get(reverse("conteo:filtered_differences_pdf"), {
+            "bodega": "BODEGA CENTRAL",
+            "tipo": "SECUNDARIO",
+            "piso": "E",
+            "pasillo": ["08", "09"],
+        })
+
+        self.assertEqual(response.status_code, 200)
+        text = "\n".join(page.extract_text() or "" for page in PdfReader(BytesIO(response.content)).pages)
+        self.assertIn("Cantidad RGE", text)
+        self.assertIn("Cantidad contada", text)
+        self.assertIn("SIN-CONTAR", text)
+        self.assertIn("E08-045Y", text)
+        self.assertIn("DIF-009", text)
+        self.assertIn("E09-045Y", text)
+        self.assertIn("-1", text)
+        self.assertIn("-2", text)
+
+        invalid = self.client.get(reverse("conteo:filtered_differences_pdf"), {
+            "bodega": "BODEGA CENTRAL",
+            "tipo": "SECUNDARIO",
+            "piso": "E",
+            "pasillo": ["99"],
+        })
+        self.assertEqual(invalid.status_code, 404)
+
     def test_secondary_modify_rge_flag_exports_rge_codes_at_zero(self):
         source = "E08-045Y"
         actual = "E08-046Y"
@@ -1748,7 +1890,7 @@ class DifferenceImportTests(TestCase):
             reverse("conteo:select_recount_codes", args=[load.pk]),
             {"codes": [selected_code.pk], "select_all": "0"},
         )
-        self.assertRedirects(response, reverse("conteo:recounts"))
+        self.assertRedirects(response, reverse("conteo:pending_queue"))
         load.refresh_from_db()
         self.assertEqual(load.estado, CargaDiferencias.Estado.RECONTEO)
         self.assertEqual(load.seleccionado_por, self.admin)

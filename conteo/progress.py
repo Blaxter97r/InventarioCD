@@ -228,6 +228,60 @@ def _configured_locations(rge_locations):
     return result, invalid, map_locations
 
 
+def _difference_report_filters_from_expected(expected_by_config):
+    """Opciones jerárquicas disponibles para el generador de PDF de diferencias."""
+    warehouses = []
+    for warehouse in dict.fromkeys(item[0] for item in LOCATION_CONFIGS):
+        types = []
+        for configured_warehouse, location_type in LOCATION_CONFIGS:
+            if configured_warehouse != warehouse:
+                continue
+            config = LOCATION_CONFIGS[(warehouse, location_type)]
+            expected = expected_by_config[(warehouse, location_type)]
+            scopes = []
+            for scope in sorted({item[config["scope_key"]] for item in expected.values()}):
+                aisles = []
+                for aisle in sorted({
+                    item["pasillo"]
+                    for item in expected.values()
+                    if item[config["scope_key"]] == scope
+                }):
+                    location_count = sum(
+                        1
+                        for item in expected.values()
+                        if item[config["scope_key"]] == scope and item["pasillo"] == aisle
+                    )
+                    aisles.append({"value": aisle, "location_count": location_count})
+                scopes.append({"value": scope, "aisles": aisles})
+            if scopes:
+                types.append({
+                    "value": location_type,
+                    "label": location_type.title(),
+                    "scope_label": config["scope_label"],
+                    "scopes": scopes,
+                })
+        if types:
+            warehouses.append({
+                "value": warehouse,
+                "label": warehouse.title(),
+                "types": types,
+            })
+    return warehouses
+
+
+def build_difference_report_filters():
+    current_rge = CargaRGE.objects.first()
+    rge_locations = set()
+    if current_rge:
+        rge_locations = {
+            _normalize(value)
+            for value in DetalleRGE.objects.filter(carga=current_rge)
+            .values_list("ubicacion", flat=True).order_by().distinct()
+        }
+    expected_by_config, _, _ = _configured_locations(rge_locations)
+    return _difference_report_filters_from_expected(expected_by_config)
+
+
 def _build_tree(scoped_expected, counted, validated, reconciliation, config):
     group_keys = [item[0] for item in config["groups"]]
 
@@ -437,6 +491,7 @@ def build_code_differences_dashboard(
         "selected_warehouse": warehouse,
         "selected_type": location_type,
         "selectors": selectors,
+        "difference_report_filters": _difference_report_filters_from_expected(expected_by_config),
         "scope_label": config["scope_label"],
         "group_labels": [label for _, label in config["groups"]],
         "leaf_label": config["leaf_label"],

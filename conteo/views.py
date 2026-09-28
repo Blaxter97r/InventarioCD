@@ -42,12 +42,16 @@ from .progress import (
     _normalize,
     _parse_location,
     build_code_differences_dashboard,
+    build_difference_report_filters,
     build_progress_dashboard,
 )
 from .progress_reports import (
+    build_filtered_difference_pdf,
     build_secondary_quantity_difference_pdf,
+    primary_code_difference_rows,
     rge_modification_rows,
     secondary_quantity_difference_rows,
+    secondary_quantity_difference_rows_for_aisles,
 )
 from .recount_reports import WAREHOUSES, attach_warehouse_options, build_recount_pdf
 
@@ -327,7 +331,7 @@ def select_recount_codes_view(request, pk):
         f"Se enviaron {selected.count()} códigos de la línea {load.linea.nlinea} "
         "a la bandeja de Reconteos.",
     )
-    return redirect("conteo:recounts")
+    return redirect("conteo:pending_queue")
 
 
 @manager_required
@@ -848,6 +852,59 @@ def progress_differences_view(request):
         request.GET.get("piso", "").strip(),
     )
     return render(request, "conteo/progress_differences.html", context)
+
+
+@login_required
+def filtered_differences_pdf_view(request):
+    warehouse = _normalize(request.GET.get("bodega", ""))
+    location_type = _normalize(request.GET.get("tipo", ""))
+    scope = _normalize(request.GET.get("piso", ""))
+    aisles = sorted({
+        _normalize(value)
+        for value in request.GET.getlist("pasillo")
+        if _normalize(value)
+    })
+
+    filters = build_difference_report_filters()
+    warehouse_option = next(
+        (item for item in filters if item["value"] == warehouse), None
+    )
+    type_option = next(
+        (
+            item
+            for item in (warehouse_option or {}).get("types", [])
+            if item["value"] == location_type
+        ),
+        None,
+    )
+    scope_option = next(
+        (
+            item
+            for item in (type_option or {}).get("scopes", [])
+            if item["value"] == scope
+        ),
+        None,
+    )
+    available_aisles = {
+        item["value"] for item in (scope_option or {}).get("aisles", [])
+    }
+    if not scope_option or not aisles or not set(aisles).issubset(available_aisles):
+        raise Http404("Selecciona una bodega, un tipo, un piso o zona y al menos un pasillo válido.")
+
+    if location_type == "PRIMARIO":
+        rows = primary_code_difference_rows(warehouse, scope, aisles)
+    else:
+        rows = secondary_quantity_difference_rows_for_aisles(warehouse, scope, aisles)
+    pdf = build_filtered_difference_pdf(
+        rows, warehouse, location_type, scope, aisles
+    )
+    response = HttpResponse(pdf, content_type="application/pdf")
+    aisle_suffix = "-".join(aisles) if len(aisles) <= 4 else "varios-pasillos"
+    response["Content-Disposition"] = (
+        f'attachment; filename="diferencias_{slugify(location_type)}_'
+        f'{slugify(warehouse)}_{slugify(scope)}_{slugify(aisle_suffix)}.pdf"'
+    )
+    return response
 
 
 @login_required

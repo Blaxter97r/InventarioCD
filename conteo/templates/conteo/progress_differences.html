@@ -1,7 +1,7 @@
 {% extends "layouts/app_shell.html" %}
 {% load static %}
 {% block title %}Diferencias del conteo | Inventario 2026{% endblock %}
-{% block extra_css %}<link rel="stylesheet" href="{% static 'conteo/css/conteo.css' %}?v=20260925-2" />{% endblock %}
+{% block extra_css %}<link rel="stylesheet" href="{% static 'conteo/css/conteo.css' %}?v=20260927-2" />{% endblock %}
 {% block page_name %}Conteo · Avance · Diferencias{% endblock %}
 {% block page_content %}
   <div class="count-page progress-page code-differences-page">
@@ -11,7 +11,15 @@
         <h1>Diferencias del conteo</h1>
         <p>Códigos esperados en el RGE que todavía no aparecen en el último conteo cargado.</p>
       </div>
-      <a class="count-button count-button--primary" href="{% url 'conteo:progress_differences' %}?{{ refresh_query }}">Actualizar ahora</a>
+      <div class="progress-heading__actions">
+        <button class="count-button difference-report-open" type="button" data-difference-report-open
+          data-selected-warehouse="{{ selected_warehouse }}" data-selected-type="{{ selected_type }}"
+          data-selected-scope="{{ selected_scope }}" {% if not difference_report_filters %}disabled{% endif %}>
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4v12m0 0 5-5m-5 5-5-5M5 20h14" /></svg>
+          Descargar diferencias
+        </button>
+        <a class="count-button count-button--primary" href="{% url 'conteo:progress_differences' %}?{{ refresh_query }}">Actualizar ahora</a>
+      </div>
     </div>
 
     <aside class="progress-source">
@@ -116,4 +124,56 @@
       <section class="queue-empty"><span>⌁</span><h2>No hay ubicaciones aplicables</h2><p>Revisa el mapa y el RGE para {{ selected_warehouse|title }} · {{ selected_type|title }}.</p></section>
     {% endif %}
   </div>
+
+  <dialog class="difference-report-modal" data-difference-report-modal aria-labelledby="difference-report-title">
+    <form method="get" action="{% url 'conteo:filtered_differences_pdf' %}" class="difference-report-modal__shell" data-difference-report-form>
+      <header>
+        <div class="difference-report-modal__title">
+          <span class="difference-report-modal__icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24"><path d="M7 3h7l4 4v14H7zM14 3v5h5M10 13h5m-5 4h5" /></svg>
+          </span>
+          <div><p class="count-eyebrow">Reporte personalizado</p><h2 id="difference-report-title">Descargar diferencias en PDF</h2><p>Define exactamente la zona que el equipo debe validar.</p></div>
+        </div>
+        <button type="button" data-difference-report-close aria-label="Cerrar modal"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18" /></svg></button>
+      </header>
+
+      <div class="difference-report-modal__body">
+        <div class="difference-report-steps" aria-label="Filtros del reporte">
+          <label><span><b>1</b>Bodega</span><select name="bodega" data-report-warehouse required></select></label>
+          <label><span><b>2</b>Tipo de ubicación</span><select name="tipo" data-report-type required></select></label>
+          <label><span><b>3</b><i data-report-scope-label>Piso o zona</i></span><select name="piso" data-report-scope required></select></label>
+        </div>
+
+        <fieldset class="difference-report-aisles">
+          <legend><b>4</b>Pasillos incluidos</legend>
+          <div class="difference-report-aisles__heading">
+            <p>Puedes marcar uno, varios o todos los pasillos disponibles.</p>
+            <label class="difference-report-select-all"><input type="checkbox" data-report-select-all><span>Seleccionar todos</span></label>
+          </div>
+          <div class="difference-report-aisle-grid" data-report-aisles></div>
+        </fieldset>
+
+        <aside class="difference-report-preview" aria-live="polite">
+          <span>PDF</span>
+          <div><strong data-report-preview-title>Completa los filtros</strong><p data-report-preview-detail>Selecciona al menos un pasillo para habilitar la descarga.</p></div>
+        </aside>
+
+        <div class="difference-report-format">
+          <strong>El PDF se adapta automáticamente</strong>
+          <p data-report-format-primary><b>Primario:</b> ubicación, avance de códigos contados y códigos pendientes.</p>
+          <p data-report-format-secondary hidden><b>Secundario:</b> ubicación, código, cantidades RGE y contada, y diferencia.</p>
+        </div>
+      </div>
+
+      <footer>
+        <button type="button" data-difference-report-close>Cancelar</button>
+        <button class="is-primary" type="submit" data-report-submit disabled>
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4v12m0 0 5-5m-5 5-5-5M5 20h14" /></svg>
+          Generar y descargar PDF
+        </button>
+      </footer>
+    </form>
+  </dialog>
+  {{ difference_report_filters|json_script:"difference-report-filter-data" }}
+  <script src="{% static 'conteo/js/difference_report_modal.js' %}?v=20260927-1" defer></script>
 {% endblock %}

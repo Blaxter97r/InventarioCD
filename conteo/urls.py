@@ -38,6 +38,7 @@ urlpatterns = [
     path("avance/reiniciar-estados/", views.reset_progress_statuses_view, name="reset_progress_statuses"),
     path("avance/general/", views.progress_general_view, name="progress_general"),
     path("avance/diferencias/", views.progress_differences_view, name="progress_differences"),
+    path("avance/diferencias/reporte.pdf", views.filtered_differences_pdf_view, name="filtered_differences_pdf"),
     path("avance/", views.progress_view, name="progress"),
     path("avance/validar-ubicacion/", views.validate_progress_location_view, name="validate_progress_location"),
     path("avance/secundario/diferencias-cantidad.pdf", views.secondary_quantity_differences_pdf_view, name="secondary_quantity_differences_pdf"),
