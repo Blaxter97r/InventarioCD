@@ -845,6 +845,139 @@ class DifferenceAccessTests(TestCase):
         self.assertEqual(primary.context["invalid_total"], 0)
         self.assertEqual(secondary.context["invalid_total"], 0)
 
+    def test_central_primary_floors_e_and_r_use_secondary_hierarchy(self):
+        locations = (
+            ("E02-063M", "E", "02", "06", "3", "M"),
+            ("R03-074X", "R", "03", "07", "4", "X"),
+        )
+        rge_load = CargaRGE.objects.create(
+            archivo_nombre="rge-primario-e-r.xlsx",
+            total_registros=len(locations),
+            total_codigos=len(locations),
+            total_ubicaciones=len(locations),
+            cargado_por=self.admin,
+        )
+        for index, (location, floor, *_dimensions) in enumerate(locations, start=1):
+            Ubicacion.objects.create(
+                ubicacion=location,
+                bodega="BODEGA CENTRAL",
+                sector=floor,
+                tipo="PRIMARIO",
+            )
+            DetalleRGE.objects.create(
+                carga=rge_load,
+                codigo=f"PRIMARIO-{floor}-{index}",
+                ubicacion=location,
+            )
+        self.client.force_login(self.user)
+
+        for location, floor, aisle_name, shelf_name, level_name, side_name in locations:
+            response = self.client.get(reverse("conteo:progress"), {
+                "bodega": "BODEGA CENTRAL",
+                "tipo": "PRIMARIO",
+                "piso": floor,
+            })
+
+            self.assertEqual(response.status_code, 200)
+            self.assertEqual(
+                response.context["group_labels"],
+                ["Pasillo", "Estante", "Nivel"],
+            )
+            self.assertEqual(response.context["leaf_label"], "Lado")
+            aisle = response.context["progress_tree"][0]
+            shelf = aisle["sides"][0]
+            level = shelf["bodies"][0]
+            location_row = level["locations"][0]
+            self.assertEqual(
+                (aisle["name"], shelf["name"], level["name"]),
+                (aisle_name, shelf_name, level_name),
+            )
+            self.assertEqual(location_row["code"], location)
+            self.assertEqual(location_row["leaf_value"], side_name)
+            self.assertEqual(
+                location_row["path"][-1],
+                {"label": "Lado", "value": side_name},
+            )
+
+        download = self.client.get(
+            reverse("conteo:pending_locations_download", args=["E"]),
+            {"bodega": "BODEGA CENTRAL", "tipo": "PRIMARIO"},
+        )
+        workbook = load_workbook(BytesIO(download.content), read_only=True, data_only=True)
+        rows = list(workbook.active.iter_rows(values_only=True))
+        workbook.close()
+        self.assertEqual(rows, [
+            ("Piso", "Pasillo", "Estante", "Nivel", "Lado", "Ubicación"),
+            ("E", "02", "06", "3", "M", "E02-063M"),
+        ])
+
+    def test_central_secondary_floors_b_d_and_f_use_primary_hierarchy(self):
+        locations = (
+            ("B09I-C01", "B", "09", "I", "C", "01"),
+            ("D11D-G02", "D", "11", "D", "G", "02"),
+            ("F12I-A03", "F", "12", "I", "A", "03"),
+        )
+        rge_load = CargaRGE.objects.create(
+            archivo_nombre="rge-secundario-b-d-f.xlsx",
+            total_registros=len(locations),
+            total_codigos=len(locations),
+            total_ubicaciones=len(locations),
+            cargado_por=self.admin,
+        )
+        for index, (location, floor, *_dimensions) in enumerate(locations, start=1):
+            Ubicacion.objects.create(
+                ubicacion=location,
+                bodega="BODEGA CENTRAL",
+                sector=floor,
+                tipo="SECUNDARIO",
+            )
+            DetalleRGE.objects.create(
+                carga=rge_load,
+                codigo=f"SECUNDARIO-{floor}-{index}",
+                ubicacion=location,
+            )
+        self.client.force_login(self.user)
+
+        for location, floor, aisle_name, side_name, shelf_name, level_name in locations:
+            response = self.client.get(reverse("conteo:progress"), {
+                "bodega": "BODEGA CENTRAL",
+                "tipo": "SECUNDARIO",
+                "piso": floor,
+            })
+
+            self.assertEqual(response.status_code, 200)
+            self.assertEqual(
+                response.context["group_labels"],
+                ["Pasillo", "Lado", "Estante"],
+            )
+            self.assertEqual(response.context["leaf_label"], "Nivel")
+            aisle = response.context["progress_tree"][0]
+            side = aisle["sides"][0]
+            shelf = side["bodies"][0]
+            location_row = shelf["locations"][0]
+            self.assertEqual(
+                (aisle["name"], side["name"], shelf["name"]),
+                (aisle_name, side_name, shelf_name),
+            )
+            self.assertEqual(location_row["code"], location)
+            self.assertEqual(location_row["leaf_value"], level_name)
+            self.assertEqual(
+                location_row["path"][-1],
+                {"label": "Nivel", "value": level_name},
+            )
+
+        download = self.client.get(
+            reverse("conteo:pending_locations_download", args=["B"]),
+            {"bodega": "BODEGA CENTRAL", "tipo": "SECUNDARIO"},
+        )
+        workbook = load_workbook(BytesIO(download.content), read_only=True, data_only=True)
+        rows = list(workbook.active.iter_rows(values_only=True))
+        workbook.close()
+        self.assertEqual(rows, [
+            ("Piso", "Pasillo", "Lado", "Estante", "Nivel", "Ubicación"),
+            ("B", "09", "I", "C", "01", "B09I-C01"),
+        ])
+
     def test_progress_supports_both_ransa_types_and_global_summary(self):
         for code, location_type, location in (
             ("R-P", "PRIMARIO", "R-08-18-03"),

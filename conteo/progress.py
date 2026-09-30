@@ -78,6 +78,8 @@ LOCATION_CONFIGS = {
 
 # Se conserva el nombre público usado por pruebas e integraciones existentes.
 MEZZANINE_LOCATION_RE = LOCATION_CONFIGS[("BODEGA CENTRAL", "PRIMARIO")]["pattern"]
+CENTRAL_PRIMARY_SECONDARY_LAYOUT_FLOORS = {"E", "R"}
+CENTRAL_SECONDARY_PRIMARY_LAYOUT_FLOORS = {"B", "D", "F"}
 
 
 def _normalize(value):
@@ -701,6 +703,17 @@ def build_progress_dashboard(selected_floor="", selected_warehouse="", selected_
     selected_scope = _normalize(selected_floor)
     if selected_scope not in available_scopes:
         selected_scope = ""
+    layout_config = config
+    if (
+        key == ("BODEGA CENTRAL", "PRIMARIO")
+        and selected_scope in CENTRAL_PRIMARY_SECONDARY_LAYOUT_FLOORS
+    ):
+        layout_config = LOCATION_CONFIGS[("BODEGA CENTRAL", "SECUNDARIO")]
+    elif (
+        key == ("BODEGA CENTRAL", "SECUNDARIO")
+        and selected_scope in CENTRAL_SECONDARY_PRIMARY_LAYOUT_FLOORS
+    ):
+        layout_config = LOCATION_CONFIGS[("BODEGA CENTRAL", "PRIMARIO")]
     scoped_expected = {
         location: dims for location, dims in expected.items()
         if not selected_scope or dims[scope_key] == selected_scope
@@ -715,17 +728,25 @@ def build_progress_dashboard(selected_floor="", selected_warehouse="", selected_
             validated,
             modify_rge_locations,
         )
-        progress_tree = _build_tree(scoped_expected, counted, validated, reconciliation, config)
+        progress_tree = _build_tree(
+            scoped_expected,
+            counted,
+            validated,
+            reconciliation,
+            layout_config,
+        )
 
-    group_labels = [label for _, label in config["groups"]]
+    group_labels = [label for _, label in layout_config["groups"]]
     pending_rows = []
     if selected_scope:
         for location, dims in sorted(scoped_expected.items()):
             if location not in completed:
                 values = [selected_scope]
-                values.extend(dims[group_key] for group_key, _ in config["groups"])
-                if config["leaf_key"]:
-                    values.append(dims[config["leaf_key"]])
+                values.extend(
+                    dims[group_key] for group_key, _ in layout_config["groups"]
+                )
+                if layout_config["leaf_key"]:
+                    values.append(dims[layout_config["leaf_key"]])
                 values.append(location)
                 pending_rows.append(tuple(values))
 
@@ -756,21 +777,26 @@ def build_progress_dashboard(selected_floor="", selected_warehouse="", selected_
         "selected_type": location_type,
         "selected_query": selected_query,
         "refresh_query": urlencode(refresh_params),
-        "format_help": config["format_help"],
+        "format_help": layout_config["format_help"],
         "invalid_total": invalid_by_config[key],
-        "scope_label": config["scope_label"],
+        "scope_label": layout_config["scope_label"],
         "scopes": scopes,
         "floors": scopes,
         "available_floors": available_scopes,
         "selected_scope": selected_scope,
         "selected_floor": selected_scope,
         "group_labels": group_labels,
-        "leaf_label": config["leaf_label"],
+        "leaf_label": layout_config["leaf_label"],
         "progress_tree": progress_tree,
         "download_headers": (
-            (config["scope_label"], *group_labels, config["leaf_label"], "Ubicación")
-            if config["leaf_key"]
-            else (config["scope_label"], *group_labels, "Ubicación")
+            (
+                layout_config["scope_label"],
+                *group_labels,
+                layout_config["leaf_label"],
+                "Ubicación",
+            )
+            if layout_config["leaf_key"]
+            else (layout_config["scope_label"], *group_labels, "Ubicación")
         ),
         "pending_rows": pending_rows,
     }
