@@ -139,7 +139,7 @@
     dialogFields.message.textContent = messages[location.status] || "Revisa esta ubicación.";
     dialogFields.expected.textContent = location.expected_products;
     dialogFields.found.textContent = location.found_elsewhere;
-    dialogFields.missing.textContent = location.expected_products - location.found_elsewhere;
+    dialogFields.missing.textContent = location.not_located_products;
     dialogFields.products.replaceChildren();
     const table = dialogFields.products.closest("table");
     table.hidden = !location.products.length;

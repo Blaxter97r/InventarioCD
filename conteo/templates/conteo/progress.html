@@ -127,9 +127,9 @@
                 <small data-validation-feedback aria-live="polite"></small>
               </form>
               <section class="progress-reconciliation__metrics">
-                <article><span>Productos esperados</span><strong data-reconciliation-expected>0</strong><small>según el RGE vigente</small></article>
-                <article><span>Encontrados en el conteo</span><strong data-reconciliation-found>0</strong><small>registrados en otro lugar</small></article>
-                <article><span>No localizados</span><strong data-reconciliation-missing>0</strong><small>sin registro en el conteo</small></article>
+                <article><span>Productos esperados en esta ubicación</span><strong data-reconciliation-expected>0</strong><small>asignados aquí según el RGE vigente</small></article>
+                <article><span>Encontrados en otras ubicaciones</span><strong data-reconciliation-found>0</strong><small>aparecen en el conteo fuera de esta ubicación</small></article>
+                <article><span>No localizados en el conteo</span><strong data-reconciliation-missing>0</strong><small>no aparecen en ninguna ubicación contada</small></article>
               </section>
               <div class="progress-reconciliation__table-wrap">
                 <table><thead><tr><th>Producto</th><th>Ubicación RGE</th><th>Estado en conteo</th><th>Registrado en</th></tr></thead><tbody data-reconciliation-products></tbody></table>
@@ -149,5 +149,5 @@
     {% endif %}
   </div>
   <script src="{% static 'conteo/js/progress_scroll.js' %}?v=20260814-1" defer></script>
-  <script src="{% static 'conteo/js/progress_explorer.js' %}?v=20260925-3" defer></script>
+  <script src="{% static 'conteo/js/progress_explorer.js' %}?v=20260929-1" defer></script>
 {% endblock %}

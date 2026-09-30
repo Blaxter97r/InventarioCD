@@ -226,6 +226,54 @@ class DifferenceAccessTests(TestCase):
             ],
         )
 
+    def test_reconciliation_metrics_distinguish_elsewhere_from_not_located(self):
+        for location in ("A01I-B01", "A01I-B02"):
+            Ubicacion.objects.create(
+                ubicacion=location,
+                bodega="BODEGA CENTRAL",
+                sector="1",
+                tipo="PRIMARIO",
+            )
+        rge_load = CargaRGE.objects.create(
+            archivo_nombre="rge-metricas.xlsx",
+            cargado_por=self.admin,
+        )
+        for code in ("CONTADO-AQUI", "EN-OTRO-LUGAR", "NO-LOCALIZADO"):
+            DetalleRGE.objects.create(
+                carga=rge_load,
+                codigo=code,
+                ubicacion="A01I-B01",
+            )
+        count_load = CargaConteoInventario.objects.create(
+            archivo_nombre="conteo-metricas.xlsx",
+            cargado_por=self.admin,
+        )
+        DetalleConteoInventario.objects.create(
+            carga=count_load,
+            bodega="CENTRAL",
+            ubicacion="A01I-B01",
+            codigo="CONTADO-AQUI",
+            cantidad=1,
+        )
+        DetalleConteoInventario.objects.create(
+            carga=count_load,
+            bodega="CENTRAL",
+            ubicacion="A01I-B02",
+            codigo="EN-OTRO-LUGAR",
+            cantidad=1,
+        )
+        self.client.force_login(self.user)
+
+        response = self.client.get(reverse("conteo:progress"), {"piso": "A"})
+
+        location = response.context["progress_tree"][0]["sides"][0]["bodies"][0]["locations"][0]
+        self.assertEqual(location["expected_products"], 3)
+        self.assertEqual(location["found_elsewhere"], 1)
+        self.assertEqual(location["not_located_products"], 1)
+        self.assertContains(response, "Productos esperados en esta ubicación")
+        self.assertContains(response, "Encontrados en otras ubicaciones")
+        self.assertContains(response, "No localizados en el conteo")
+
     def test_validated_location_counts_toward_progress_and_can_be_unchecked(self):
         for location in ("A01I-B01", "A01I-B02"):
             Ubicacion.objects.create(
@@ -515,6 +563,7 @@ class DifferenceAccessTests(TestCase):
         text = "\n".join(page.extract_text() or "" for page in PdfReader(BytesIO(response.content)).pages)
         self.assertIn("Cantidad RGE", text)
         self.assertIn("Cantidad contada", text)
+        self.assertIn("Firma auditor", text)
         self.assertNotIn("SIN-CONTAR", text)
         self.assertNotIn("E08-045Y", text)
         self.assertIn("DIF-009", text)

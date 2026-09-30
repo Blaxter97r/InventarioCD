@@ -172,11 +172,14 @@ def _build_reconciliation_data(
     for location, product_codes_at_location in products_by_location.items():
         products = []
         found_elsewhere = 0
+        not_located_products = 0
         for code in sorted(product_codes_at_location):
             counted_here = location in counted_by_code.get(code, set())
             other_locations = sorted(counted_by_code.get(code, set()) - {location})
             if other_locations:
                 found_elsewhere += 1
+            if not counted_here and not other_locations:
+                not_located_products += 1
             products.append({
                 "code": code,
                 "expected_location": location,
@@ -215,6 +218,7 @@ def _build_reconciliation_data(
             "modify_rge": location in modify_rge_location_set,
             "expected_products": len(products),
             "found_elsewhere": found_elsewhere,
+            "not_located_products": not_located_products,
             "products": products,
         }
     return reconciliation

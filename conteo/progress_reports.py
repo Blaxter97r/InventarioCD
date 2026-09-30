@@ -302,6 +302,7 @@ def build_filtered_difference_pdf(
             "Cantidad contada",
             "Veces escaneado",
             "Posibles duplicados",
+            *(["Firma auditor"] if location_type == "SECUNDARIO" else []),
         ]]
         data.extend([
             [
@@ -310,10 +311,15 @@ def build_filtered_difference_pdf(
                 _quantity_text(row["counted_quantity"]),
                 str(row["scan_count"]),
                 str(row["duplicate_count"]),
+                *([""] if location_type == "SECUNDARIO" else []),
             ]
             for row in rows
         ])
-        widths = (58 * mm, 72 * mm, 48 * mm, 43 * mm, 43 * mm)
+        widths = (
+            (45 * mm, 55 * mm, 38 * mm, 36 * mm, 36 * mm, 55 * mm)
+            if location_type == "SECUNDARIO"
+            else (58 * mm, 72 * mm, 48 * mm, 43 * mm, 43 * mm)
+        )
     elif location_type == "PRIMARIO":
         data = [["Ubicación", "Códigos contados", "Códigos no contados"]]
         data.extend([
@@ -327,7 +333,12 @@ def build_filtered_difference_pdf(
         widths = (55 * mm, 42 * mm, 168 * mm)
     else:
         data = [[
-            "Ubicación", "Códigos contados", "Cantidad RGE", "Cantidad contada", "Diferencia"
+            "Ubicación",
+            "Códigos contados",
+            "Cantidad RGE",
+            "Cantidad contada",
+            "Diferencia",
+            "Firma auditor",
         ]]
         data.extend([
             [
@@ -336,14 +347,25 @@ def build_filtered_difference_pdf(
                 _quantity_text(row["rge_quantity"]),
                 _quantity_text(row["counted_quantity"]),
                 _quantity_text(row["difference"]),
+                "",
             ]
             for row in rows
         ])
-        widths = (57 * mm, 68 * mm, 43 * mm, 48 * mm, 43 * mm)
+        widths = (44 * mm, 52 * mm, 32 * mm, 37 * mm, 31 * mm, 65 * mm)
     if not rows:
         data.append(["Sin diferencias para los filtros seleccionados", *([""] * (len(data[0]) - 1))])
 
-    table = LongTable(data, repeatRows=1, colWidths=widths)
+    row_heights = (
+        [9 * mm] + [11 * mm] * (len(data) - 1)
+        if location_type == "SECUNDARIO"
+        else None
+    )
+    table = LongTable(
+        data,
+        repeatRows=1,
+        colWidths=widths,
+        rowHeights=row_heights,
+    )
     table_style = [
         ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#087F76")),
         ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
