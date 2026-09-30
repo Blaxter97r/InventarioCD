@@ -19,7 +19,7 @@
     <aside class="format-card">
       <p class="eyebrow">Datos conservados</p><h2>Cuatro columnas obligatorias</h2><p>El archivo puede incluir otras columnas; la plataforma las ignorará.</p>
       <div class="sheet-format"><code>Bodega | Ubicacion | Codigo | Cantidad</code></div>
-      <ul class="rules"><li>Los encabezados pueden estar en la fila 1 o 2.</li><li>Se busca una hoja que contenga las cuatro columnas.</li><li>Todos los valores son obligatorios.</li><li>Cantidad debe ser numérica y puede ser cero.</li><li>Cada envío queda visible como una carga independiente y el Admin puede eliminar duplicados.</li></ul>
+      <ul class="rules"><li>Los encabezados pueden estar en la fila 1 o 2.</li><li>Se busca una hoja que contenga las cuatro columnas.</li><li>Todos los valores son obligatorios.</li><li>Cantidad debe ser numérica y puede ser cero.</li><li>Si un código se repite en la misma bodega y ubicación, sus cantidades se suman en un solo registro.</li><li>Cada envío queda visible como una carga independiente y el Admin puede eliminar duplicados.</li></ul>
       <a class="template-link" href="{% url 'archivos:inventory_count_template' %}"><svg viewBox="0 0 24 24"><path d="M12 4v12m0 0 5-5m-5 5-5-5M5 20h14" /></svg>Descargar plantilla</a>
     </aside>
   </div>

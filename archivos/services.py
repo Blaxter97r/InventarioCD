@@ -426,7 +426,8 @@ def import_inventory_count_workbook(uploaded_file, user):
 
     try:
         sheet, positions, header_row_number = _find_inventory_count_header(workbook)
-        records = []
+        records_by_key = {}
+        source_record_count = 0
         warehouses = set()
         codes = set()
         first_data_row = header_row_number + 1
@@ -440,7 +441,8 @@ def import_inventory_count_workbook(uploaded_file, user):
             }
             if not any(value not in (None, "") for value in values.values()):
                 continue
-            if len(records) >= 200000:
+            source_record_count += 1
+            if source_record_count > 200000:
                 raise ExcelImportError("El archivo supera el máximo de 200,000 registros.")
 
             bodega = _cell_text(values["bodega"])
@@ -454,19 +456,31 @@ def import_inventory_count_workbook(uploaded_file, user):
                 raise ExcelImportError(
                     f"Fila {row_number}: Bodega, Ubicacion o Codigo supera 100 caracteres."
                 )
-            records.append(
-                DetalleConteoInventario(
+            quantity = _inventory_quantity(values["cantidad"], row_number)
+            record_key = (bodega.casefold(), ubicacion.casefold(), codigo.casefold())
+            existing_record = records_by_key.get(record_key)
+            if existing_record:
+                combined_quantity = existing_record.cantidad + quantity
+                if abs(combined_quantity) >= Decimal("100000000000000"):
+                    raise ExcelImportError(
+                        f"Fila {row_number}: la cantidad acumulada de {codigo} en "
+                        f"{ubicacion} excede el límite permitido."
+                    )
+                existing_record.cantidad = combined_quantity
+            else:
+                records_by_key[record_key] = DetalleConteoInventario(
                     bodega=bodega,
                     ubicacion=ubicacion,
                     codigo=codigo,
-                    cantidad=_inventory_quantity(values["cantidad"], row_number),
+                    cantidad=quantity,
                 )
-            )
-            warehouses.add(bodega)
-            codes.add(codigo)
+            warehouses.add(bodega.casefold())
+            codes.add(codigo.casefold())
 
-        if not records:
+        if not records_by_key:
             raise ExcelImportError("El archivo no contiene registros de conteo para importar.")
+
+        records = list(records_by_key.values())
 
         with transaction.atomic():
             carga = CargaConteoInventario.objects.create(

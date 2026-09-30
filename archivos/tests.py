@@ -412,6 +412,30 @@ class InventoryCountImportTests(TestCase):
         self.assertEqual(first.cantidad, Decimal("1.5"))
         self.assertEqual(second.cantidad, Decimal("0"))
 
+    def test_import_sums_duplicate_code_at_same_warehouse_and_location(self):
+        workbook = make_inventory_count_workbook([
+            ("Central", "A-01", "ABC-001", 2),
+            ("central", "a-01", "abc-001", "3,5"),
+            ("Central", "A-02", "ABC-001", 4),
+        ])
+
+        response = self.client.post(
+            reverse("archivos:inventory_count_upload"),
+            {"archivo": workbook},
+        )
+
+        self.assertRedirects(response, reverse("archivos:inventory_count_index"))
+        load = CargaConteoInventario.objects.get()
+        self.assertEqual(load.total_registros, 2)
+        self.assertEqual(load.total_codigos, 1)
+        self.assertEqual(load.total_bodegas, 1)
+        self.assertEqual(DetalleConteoInventario.objects.count(), 2)
+        combined = DetalleConteoInventario.objects.get(ubicacion="A-01")
+        self.assertEqual(combined.codigo, "ABC-001")
+        self.assertEqual(combined.cantidad, Decimal("5.5"))
+        separate = DetalleConteoInventario.objects.get(ubicacion="A-02")
+        self.assertEqual(separate.cantidad, Decimal("4"))
+
     def test_missing_required_column_rejects_complete_file(self):
         workbook = make_inventory_count_workbook(
             [("Central", "A-01", "ABC-001")],

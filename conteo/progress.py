@@ -14,12 +14,23 @@ from django.db.models.functions import Upper
 from .models import ValidacionUbicacion
 
 
+CENTRAL_RACK_LOCATION_RE = re.compile(
+    r"^(?P<piso>[A-Z])(?P<pasillo>\d{2})(?P<lado>[A-Z])-(?P<cuerpo>[A-Z])(?P<nivel>\d{2})$",
+    re.IGNORECASE,
+)
+CENTRAL_SHELF_LOCATION_RE = re.compile(
+    r"^(?P<piso>[A-Z])(?P<pasillo>\d{2})-(?P<cuerpo>\d{2})(?P<nivel>\d)(?P<lado>[A-Z0-9])$",
+    re.IGNORECASE,
+)
+
+
 LOCATION_CONFIGS = {
     ("BODEGA CENTRAL", "PRIMARIO"): {
-        "pattern": re.compile(
-            r"^(?P<piso>[A-Z])(?P<pasillo>\d{2})(?P<lado>[A-Z])-(?P<cuerpo>[A-Z])(?P<nivel>\d{2})$",
-            re.IGNORECASE,
-        ),
+        "pattern": CENTRAL_RACK_LOCATION_RE,
+        # En Bodega Central el tipo del mapa maestro define si la ubicación
+        # es primaria o secundaria. El formato del código no determina el
+        # tipo: por ejemplo, el piso E primario usa también formato de estante.
+        "patterns": (CENTRAL_RACK_LOCATION_RE, CENTRAL_SHELF_LOCATION_RE),
         "scope_key": "piso",
         "scope_label": "Piso",
         "groups": (("pasillo", "Pasillo"), ("lado", "Lado"), ("cuerpo", "Estante")),
@@ -28,10 +39,9 @@ LOCATION_CONFIGS = {
         "format_help": "Piso · Pasillo · Lado · Estante · Nivel",
     },
     ("BODEGA CENTRAL", "SECUNDARIO"): {
-        "pattern": re.compile(
-            r"^(?P<piso>[A-Z])(?P<pasillo>\d{2})-(?P<cuerpo>\d{2})(?P<nivel>\d)(?P<lado>[A-Z0-9])$",
-            re.IGNORECASE,
-        ),
+        "pattern": CENTRAL_SHELF_LOCATION_RE,
+        # Los pisos secundarios B, D y F pueden usar el formato de rack.
+        "patterns": (CENTRAL_SHELF_LOCATION_RE, CENTRAL_RACK_LOCATION_RE),
         "scope_key": "piso",
         "scope_label": "Piso",
         # En E08-045Y el lado es la última dimensión física.
@@ -79,10 +89,12 @@ def parse_mezzanine_location(value):
 
 
 def _parse_location(value, config):
-    match = config["pattern"].fullmatch((value or "").strip())
-    if not match:
-        return None
-    return {key: item.upper() for key, item in match.groupdict().items()}
+    normalized = (value or "").strip()
+    for pattern in config.get("patterns", (config["pattern"],)):
+        match = pattern.fullmatch(normalized)
+        if match:
+            return {key: item.upper() for key, item in match.groupdict().items()}
+    return None
 
 
 def _percentage(counted, expected):

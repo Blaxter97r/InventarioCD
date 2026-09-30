@@ -133,7 +133,14 @@ class InicioReconteoBodega(models.Model):
     carga = models.ForeignKey(
         CargaDiferencias, on_delete=models.CASCADE, related_name="inicios_bodega"
     )
-    bodega = models.CharField(max_length=10, choices=(("central", "Bodega Central"), ("ransa", "RANSA")))
+    bodega = models.CharField(
+        max_length=10,
+        choices=(
+            ("central", "Bodega Central"),
+            ("ransa", "RANSA"),
+            ("pedregal", "Pedregal"),
+        ),
+    )
     iniciado_por = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT)
     fecha_inicio = models.DateTimeField(auto_now_add=True)
     finalizado_por = models.ForeignKey(

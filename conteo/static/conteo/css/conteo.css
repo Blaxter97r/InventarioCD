@@ -150,13 +150,13 @@
 .queue-empty p { margin: 7px 0 0; color: var(--count-muted); font-size: 11px; }
 .recount-list { display: grid; gap: 11px; }
 .recount-card { overflow: hidden; border: 1px solid var(--count-line); border-radius: 13px; background: #fff; box-shadow: 0 7px 22px rgba(18, 48, 59, .035); }
-.recount-card__summary { display: grid; grid-template-columns: minmax(220px, 1fr) 120px 135px minmax(180px, .7fr) 330px auto; align-items: center; gap: 16px; padding: 17px 18px; }
+.recount-card__summary { display: grid; grid-template-columns: minmax(220px, 1fr) 120px 135px minmax(180px, .7fr) 360px auto; align-items: center; gap: 16px; padding: 17px 18px; }
 .recount-selected-by { min-width: 0; }
 .recount-selected-by > span { display: block; margin-bottom: 5px; color: #87949a; font-size: 8px; font-weight: 800; letter-spacing: .5px; text-transform: uppercase; }
 .recount-selected-by strong, .recount-selected-by small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .recount-selected-by strong { color: #344a54; font-size: 10px; }
 .recount-selected-by small { margin-top: 3px; color: #87949a; font-size: 9px; }
-.recount-warehouses { display: grid; grid-template-columns: repeat(2, minmax(116px, 1fr)) minmax(70px, auto); align-items: start; gap: 7px; width: 330px; }
+.recount-warehouses { display: grid; grid-template-columns: repeat(3, minmax(105px, 1fr)); align-items: start; gap: 7px; width: 360px; }
 .recount-warehouse-control { display: grid; grid-template-rows: 40px 13px 26px; gap: 4px; min-width: 0; }
 .recount-warehouse-control > .recount-warehouse { grid-row: 1; }
 .recount-warehouse-control > .recount-warehouse-state { grid-row: 2; }
@@ -184,6 +184,7 @@
 .recount-warehouse strong { display: grid; min-width: 22px; height: 22px; place-items: center; border-radius: 7px; background: rgba(255, 255, 255, .2); font-size: 10px; }
 .recount-warehouse--central { background: #087f76; }
 .recount-warehouse--ransa { background: #d46b20; }
+.recount-warehouse--pedregal { background: #385f91; }
 .recount-warehouse.is-disabled { color: #8a969b; border-color: #dce4e6; background: #f2f5f5; box-shadow: none; cursor: not-allowed; }
 .recount-warehouse.is-disabled strong { color: #8a969b; background: #e3e9ea; }
 .recount-details summary { display: inline-flex; height: 38px; align-items: center; justify-content: center; padding: 0 14px; border-radius: 8px; color: #fff; background: var(--count-navy); font-size: 10px; font-weight: 800; white-space: nowrap; cursor: pointer; list-style: none; }

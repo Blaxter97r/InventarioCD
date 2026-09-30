@@ -10,7 +10,14 @@ from reportlab.lib.enums import TA_CENTER, TA_LEFT, TA_RIGHT
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
 from reportlab.lib.units import mm
-from reportlab.platypus import LongTable, Paragraph, SimpleDocTemplate, TableStyle
+from reportlab.platypus import (
+    KeepInFrame,
+    LongTable,
+    PageBreak,
+    Paragraph,
+    SimpleDocTemplate,
+    TableStyle,
+)
 from pypdf import PdfReader, PdfWriter
 
 from archivos.models import (
@@ -29,11 +36,13 @@ logger = logging.getLogger(__name__)
 WAREHOUSES = {
     "central": "Bodega Central",
     "ransa": "RANSA",
+    "pedregal": "Pedregal",
 }
 EXTERNAL_WAREHOUSES = ("LOURDES", "MIRAMAR", "AGDOSA")
 REPORT_WAREHOUSE_LABELS = {
     "central": "CENTRAL",
     "ransa": "RANSA",
+    "pedregal": "PEDREGAL",
 }
 EXTRA_LOCATION_ROWS = 1
 
@@ -46,6 +55,8 @@ def _warehouse_key(value):
     normalized = _normalize(value)
     if "RANSA" in normalized:
         return "ransa"
+    if "PEDREGAL" in normalized:
+        return "pedregal"
     if "CENTRAL" in normalized:
         return "central"
     return None
@@ -74,25 +85,23 @@ def attach_warehouse_options(recounts):
         for load in recounts
     }
     all_codes = set().union(*selected_by_load.values()) if selected_by_load else set()
-    warehouses_by_code = defaultdict(set)
-    current_count = CargaConteoInventario.objects.first()
-
-    if current_count and all_codes:
-        details = (
-            DetalleConteoInventario.objects.filter(carga=current_count)
-            .annotate(normalized_code=Upper("codigo"))
-            .filter(normalized_code__in=all_codes)
-            .values_list("codigo", "bodega")
-        )
-        for code, warehouse_name in details:
-            warehouse = _count_warehouse_key(warehouse_name)
-            if warehouse:
-                warehouses_by_code[_normalize(code)].add(warehouse)
-
-    rge_by_warehouse = _rge_locations_by_warehouse(all_codes)
-    for warehouse, codes in rge_by_warehouse.items():
-        for code in codes:
-            warehouses_by_code[code].add(warehouse)
+    location_catalog = _location_catalog()
+    scanned_by_warehouse, _ = _group_all_scanned_locations(all_codes)
+    rge_by_warehouse = _rge_locations_by_warehouse(all_codes, location_catalog)
+    warehouses_by_code = {
+        code: {
+            warehouse
+            for warehouse in WAREHOUSES
+            if _pdf_locations_for_code(
+                code,
+                warehouse,
+                scanned_by_warehouse,
+                rge_by_warehouse,
+                location_catalog,
+            )
+        }
+        for code in all_codes
+    }
 
     for load in recounts:
         selected_codes = selected_by_load[load.pk]
@@ -193,6 +202,77 @@ def _external_counts(codes):
     return totals
 
 
+def _filter_pdf_locations(location_rows, warehouse_key):
+    """Aplica la matriz Primario/Secundario al PDF de una bodega."""
+    primary_warehouses = {
+        row_warehouse
+        for row_warehouse, row in location_rows
+        if row["type"] == "PRIMARIO"
+    }
+    if warehouse_key in primary_warehouses:
+        return [
+            row
+            for row_warehouse, row in location_rows
+            if row["type"] in {"PRIMARIO", "SECUNDARIO"}
+            or row_warehouse == warehouse_key
+        ]
+    if primary_warehouses:
+        return [
+            row
+            for row_warehouse, row in location_rows
+            if row_warehouse == warehouse_key
+            and row["type"] in {"SECUNDARIO", "—"}
+        ]
+    return [
+        row for row_warehouse, row in location_rows
+        if row_warehouse == warehouse_key
+    ]
+
+
+def _pdf_locations_for_code(
+    code,
+    warehouse_key,
+    scanned_by_warehouse,
+    rge_by_warehouse,
+    location_catalog,
+):
+    location_rows = []
+    warehouse_order = [warehouse_key, *(key for key in WAREHOUSES if key != warehouse_key)]
+    for detail_warehouse in warehouse_order:
+        counted_by_location = scanned_by_warehouse[detail_warehouse].get(code, {})
+        rge_by_location = rge_by_warehouse[detail_warehouse].get(code, {})
+        if not counted_by_location and not rge_by_location:
+            continue
+        displayed_counted = (
+            counted_by_location
+            if counted_by_location
+            else {location: Decimal(0) for location in rge_by_location}
+        )
+        locations = sorted(
+            set(displayed_counted) | set(rge_by_location),
+            key=lambda location: (
+                {"PRIMARIO": 0, "SECUNDARIO": 1}.get(
+                    location_catalog.get(location, {}).get("type"), 2
+                ),
+                location,
+            ),
+        )
+        location_rows.extend(
+            (
+                detail_warehouse,
+                {
+                    "warehouse": REPORT_WAREHOUSE_LABELS[detail_warehouse],
+                    "type": location_catalog.get(location, {}).get("type") or "—",
+                    "location": location,
+                    "rge_quantity": rge_by_location.get(location),
+                    "counted_quantity": displayed_counted.get(location),
+                },
+            )
+            for location in locations
+        )
+    return _filter_pdf_locations(location_rows, warehouse_key)
+
+
 def _product_rows(load, warehouse_key):
     selected = list(
         load.diferencias.filter(seleccionada=True).order_by("sublinea", "codigo", "pk")
@@ -204,10 +284,19 @@ def _product_rows(load, warehouse_key):
     scanned = scanned_by_warehouse[warehouse_key]
     rge = rge_by_warehouse[warehouse_key]
     external_counts = _external_counts(all_codes)
+    pdf_locations_by_code = {
+        code: _pdf_locations_for_code(
+            code,
+            warehouse_key,
+            scanned_by_warehouse,
+            rge_by_warehouse,
+            location_catalog,
+        )
+        for code in all_codes
+    }
     selected = [
         item for item in selected
-        if scanned.get(_normalize(item.codigo))
-        or rge.get(_normalize(item.codigo))
+        if pdf_locations_by_code[_normalize(item.codigo)]
     ]
     subline_descriptions = {}
     for subline in Sublinea.objects.filter(linea=load.linea):
@@ -222,37 +311,7 @@ def _product_rows(load, warehouse_key):
             counted = sorted(requested_counted_locations.items())
         else:
             counted = [(location, Decimal(0)) for location in sorted(rge[code])]
-        combined_locations = []
-        warehouse_order = [warehouse_key, *(key for key in WAREHOUSES if key != warehouse_key)]
-        for detail_warehouse in warehouse_order:
-            counted_by_location = scanned_by_warehouse[detail_warehouse].get(code, {})
-            rge_by_location = rge_by_warehouse[detail_warehouse].get(code, {})
-            if not counted_by_location and not rge_by_location:
-                continue
-            displayed_counted = (
-                counted_by_location
-                if counted_by_location
-                else {location: Decimal(0) for location in rge_by_location}
-            )
-            locations = sorted(
-                set(displayed_counted) | set(rge_by_location),
-                key=lambda location: (
-                    {"PRIMARIO": 0, "SECUNDARIO": 1}.get(
-                        location_catalog.get(location, {}).get("type"), 2
-                    ),
-                    location,
-                ),
-            )
-            combined_locations.extend(
-                {
-                    "warehouse": REPORT_WAREHOUSE_LABELS[detail_warehouse],
-                    "type": location_catalog.get(location, {}).get("type") or "—",
-                    "location": location,
-                    "rge_quantity": rge_by_location.get(location),
-                    "counted_quantity": displayed_counted.get(location),
-                }
-                for location in locations
-            )
+        combined_locations = pdf_locations_by_code[code]
         rows.append(
             {
                 "base": [
@@ -457,6 +516,26 @@ def _combined_inventory_table(rows, styles):
     return table
 
 
+def _paginated_inventory_rows(rows, styles, available_width, available_height):
+    """Agrupa productos completos por página para no cortar un código."""
+    if not rows:
+        return [[]]
+
+    pages = []
+    current_page = []
+    for report_row in rows:
+        candidate_page = [*current_page, report_row]
+        candidate_table = _combined_inventory_table(candidate_page, styles)
+        _, candidate_height = candidate_table.wrap(available_width, available_height)
+        if current_page and candidate_height > available_height:
+            pages.append(current_page)
+            current_page = [report_row]
+        else:
+            current_page = candidate_page
+    pages.append(current_page)
+    return pages
+
+
 def _draw_page_footer(canvas, document):
     canvas.saveState()
     page_width = document.pagesize[0]
@@ -498,7 +577,17 @@ def build_recount_pdf(load, warehouse_key):
         f"Línea {load.linea.nlinea} · Reconteo #{load.numero_reconteo} · "
         f"{WAREHOUSES[warehouse_key]}"
     )
-    story = [_combined_inventory_table(rows, styles)]
+    page_rows = _paginated_inventory_rows(rows, styles, document.width, document.height)
+    story = []
+    for page_index, rows_for_page in enumerate(page_rows):
+        if page_index:
+            story.append(PageBreak())
+        story.append(KeepInFrame(
+            document.width,
+            document.height,
+            [_combined_inventory_table(rows_for_page, styles)],
+            mode="shrink",
+        ))
     document.build(story, onFirstPage=_draw_page_footer, onLaterPages=_draw_page_footer)
     report = output.getvalue()
     if load.archivo_as400:
