@@ -102,8 +102,9 @@ def manager_required(view):
     return wrapped
 
 
-def _ordered_lines():
-    return Linea.objects.annotate(
+def _ordered_lines(include_inactive=False):
+    lines = Linea.objects.all() if include_inactive else Linea.objects.filter(activa=True)
+    return lines.annotate(
         orden_numerico=Cast("nlinea", IntegerField())
     ).order_by("orden_numerico", "nlinea")
 
@@ -619,7 +620,7 @@ def line_summary_view(request):
         .prefetch_related("inicios_bodega")
         .order_by("-fecha_carga", "-pk")
     )
-    lines = list(_ordered_lines().prefetch_related(
+    lines = list(_ordered_lines(include_inactive=True).prefetch_related(
         Prefetch("cargas_diferencias", queryset=recount_history, to_attr="historial_reconteos")
     ))
     current_recounts = [

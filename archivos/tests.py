@@ -271,6 +271,32 @@ class ExcelImportTests(TestCase):
         self.assertRedirects(response, reverse("archivos:index"))
         self.assertEqual(Linea.objects.get(pk="L01").descripcion, "Descripción actualizada")
 
+    def test_new_workbook_replaces_the_visible_catalog(self):
+        previous_line = Linea.objects.create(
+            id_linea="ANT", nlinea="99", descripcion="Línea anterior"
+        )
+        Sublinea.objects.create(
+            id_sublinea="SUB-ANT",
+            linea=previous_line,
+            numero="999",
+            descripcion="Sublínea anterior",
+        )
+        workbook = make_workbook(
+            line_rows=[("NUEVA", "01", "Línea vigente")],
+            subline_rows=[("SUB-NUEVA", "NUEVA", "001", "Sublínea vigente")],
+        )
+
+        response = self.client.post(reverse("archivos:upload"), {"archivo": workbook})
+
+        self.assertRedirects(response, reverse("archivos:index"))
+        self.assertFalse(Linea.objects.get(pk="ANT").activa)
+        self.assertTrue(Linea.objects.get(pk="NUEVA").activa)
+        self.assertFalse(Sublinea.objects.filter(pk="SUB-ANT").exists())
+        self.assertTrue(Sublinea.objects.filter(pk="SUB-NUEVA").exists())
+        page = self.client.get(reverse("archivos:index"))
+        self.assertEqual(page.context["total_lineas"], 1)
+        self.assertNotContains(page, "Línea anterior")
+
     def test_unknown_line_rejects_complete_workbook(self):
         workbook = make_workbook(
             line_rows=[("L01", "01", "Motores")],

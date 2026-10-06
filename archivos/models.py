@@ -6,6 +6,7 @@ class Linea(models.Model):
     id_linea = models.CharField("ID de línea", max_length=30, primary_key=True)
     nlinea = models.CharField("Número de línea", max_length=30)
     descripcion = models.CharField("Descripción", max_length=255)
+    activa = models.BooleanField("activa", default=True)
 
     class Meta:
         ordering = ("nlinea", "id_linea")

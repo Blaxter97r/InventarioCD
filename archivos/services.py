@@ -42,8 +42,10 @@ class ExcelImportError(Exception):
 class ImportResult:
     lineas_creadas: int = 0
     lineas_actualizadas: int = 0
+    lineas_retiradas: int = 0
     sublineas_creadas: int = 0
     sublineas_actualizadas: int = 0
+    sublineas_retiradas: int = 0
 
 
 @dataclass(frozen=True)
@@ -147,7 +149,6 @@ def _validate_records(lineas, sublineas):
         if len(record["descripcion"]) > 255:
             raise ExcelImportError(f"Hoja Lineas, fila {record['_row']}: la descripción supera 255 caracteres.")
 
-    available_line_ids = line_ids | set(Linea.objects.values_list("id_linea", flat=True))
     subline_ids = set()
     line_number_pairs = set()
     for record in sublineas:
@@ -159,9 +160,10 @@ def _validate_records(lineas, sublineas):
             raise ExcelImportError(
                 f"La sublínea número {record['numero']} está repetida para la línea {record['id_linea']}."
             )
-        if record["id_linea"] not in available_line_ids:
+        if record["id_linea"] not in line_ids:
             raise ExcelImportError(
-                f"Hoja Sublineas, fila {record['_row']}: la línea {record['id_linea']} no existe."
+                f"Hoja Sublineas, fila {record['_row']}: la línea {record['id_linea']} "
+                "no existe en la hoja Lineas."
             )
         if len(subline_id) > 30 or len(record["id_linea"]) > 30 or len(record["numero"]) > 30:
             raise ExcelImportError(f"Hoja Sublineas, fila {record['_row']}: un código supera 30 caracteres.")
@@ -185,26 +187,59 @@ def import_catalog_workbook(uploaded_file):
             raise ExcelImportError("El archivo no contiene registros para importar.")
         _validate_records(lineas, sublineas)
 
-        counters = {"lineas_creadas": 0, "lineas_actualizadas": 0, "sublineas_creadas": 0, "sublineas_actualizadas": 0}
+        counters = {
+            "lineas_creadas": 0,
+            "lineas_actualizadas": 0,
+            "lineas_retiradas": 0,
+            "sublineas_creadas": 0,
+            "sublineas_actualizadas": 0,
+            "sublineas_retiradas": 0,
+        }
         try:
             with transaction.atomic():
+                incoming_line_ids = {record["id_linea"] for record in lineas}
+                incoming_subline_ids = {record["id_sublinea"] for record in sublineas}
+                existing_subline_ids = set(
+                    Sublinea.objects.filter(id_sublinea__in=incoming_subline_ids)
+                    .values_list("id_sublinea", flat=True)
+                )
+
+                counters["sublineas_creadas"] = len(incoming_subline_ids - existing_subline_ids)
+                counters["sublineas_actualizadas"] = len(existing_subline_ids)
+                counters["sublineas_retiradas"] = Sublinea.objects.exclude(
+                    id_sublinea__in=incoming_subline_ids
+                ).count()
+                Sublinea.objects.all().delete()
+
+                retired_lines = Linea.objects.filter(activa=True).exclude(
+                    id_linea__in=incoming_line_ids
+                )
+                counters["lineas_retiradas"] = retired_lines.count()
+                retired_lines.update(activa=False)
+
                 for record in lineas:
                     _, created = Linea.objects.update_or_create(
                         id_linea=record["id_linea"],
-                        defaults={"nlinea": record["nlinea"], "descripcion": record["descripcion"]},
+                        defaults={
+                            "nlinea": record["nlinea"],
+                            "descripcion": record["descripcion"],
+                            "activa": True,
+                        },
                     )
                     counters["lineas_creadas" if created else "lineas_actualizadas"] += 1
 
-                for record in sublineas:
-                    _, created = Sublinea.objects.update_or_create(
-                        id_sublinea=record["id_sublinea"],
-                        defaults={
-                            "linea_id": record["id_linea"],
-                            "numero": record["numero"],
-                            "descripcion": record["descripcion"],
-                        },
-                    )
-                    counters["sublineas_creadas" if created else "sublineas_actualizadas"] += 1
+                Sublinea.objects.bulk_create(
+                    [
+                        Sublinea(
+                            id_sublinea=record["id_sublinea"],
+                            linea_id=record["id_linea"],
+                            numero=record["numero"],
+                            descripcion=record["descripcion"],
+                        )
+                        for record in sublineas
+                    ],
+                    batch_size=2000,
+                )
         except IntegrityError as error:
             raise ExcelImportError(
                 "La carga produciría códigos duplicados. Revisa los números de sublínea dentro de cada línea."

@@ -12,7 +12,7 @@
         </span>
         <div><p class="eyebrow">Importación</p><h1>Cargar archivo Excel</h1></div>
       </div>
-      <p class="intro">Importa o actualiza líneas y sublíneas en una sola operación segura.</p>
+      <p class="intro">Sustituye el catálogo actual de líneas y sublíneas en una sola operación segura.</p>
 
       <form method="post" enctype="multipart/form-data" novalidate>
         {% csrf_token %}
@@ -46,7 +46,7 @@
         <li>La primera fila contiene los encabezados.</li>
         <li>Todos los campos son obligatorios.</li>
         <li>Usa formato texto para conservar ceros iniciales.</li>
-        <li>La carga actualiza IDs existentes; no elimina registros ausentes.</li>
+        <li>La carga sustituye el catálogo actual; los registros ausentes se retiran.</li>
       </ul>
       <a class="template-link" href="{% url 'archivos:template' %}">
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4v12m0 0 5-5m-5 5-5-5M5 20h14" /></svg>

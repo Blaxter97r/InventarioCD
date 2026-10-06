@@ -65,7 +65,7 @@ class DiferenciasUploadForm(forms.Form):
             linea_id=OuterRef("pk"),
             estado=CargaDiferencias.Estado.PENDIENTE,
         )
-        self.fields["linea"].queryset = Linea.objects.annotate(
+        self.fields["linea"].queryset = Linea.objects.filter(activa=True).annotate(
             orden_numerico=Cast("nlinea", IntegerField()),
             tiene_pendiente=Exists(pending_loads),
         ).order_by("orden_numerico", "nlinea")

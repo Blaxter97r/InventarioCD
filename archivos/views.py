@@ -73,7 +73,7 @@ def index_view(request):
     ordered_sublineas = Sublinea.objects.annotate(
         numero_orden=Cast("numero", IntegerField()),
     ).order_by("numero_orden", "numero", "id_sublinea")
-    lineas = Linea.objects.all()
+    lineas = Linea.objects.filter(activa=True)
     if query:
         lineas = lineas.filter(
             Q(id_linea__icontains=query)
@@ -96,8 +96,8 @@ def index_view(request):
     context = {
         "query": query,
         "lineas": Paginator(lineas, 20).get_page(request.GET.get("lineas_page")),
-        "total_lineas": Linea.objects.count(),
-        "total_sublineas": Sublinea.objects.count(),
+        "total_lineas": Linea.objects.filter(activa=True).count(),
+        "total_sublineas": Sublinea.objects.filter(linea__activa=True).count(),
     }
     return render(request, "archivos/index.html", context)
 
@@ -116,8 +116,10 @@ def upload_view(request):
                 "Carga completada: "
                 f"{result.lineas_creadas} líneas creadas, "
                 f"{result.lineas_actualizadas} actualizadas, "
+                f"{result.lineas_retiradas} retiradas, "
                 f"{result.sublineas_creadas} sublíneas creadas y "
-                f"{result.sublineas_actualizadas} actualizadas.",
+                f"{result.sublineas_actualizadas} actualizadas; "
+                f"{result.sublineas_retiradas} sublíneas retiradas.",
             )
             return redirect("archivos:index")
     return render(request, "archivos/upload.html", {"form": form})
@@ -132,7 +134,8 @@ def template_view(request):
     instructions.append(["1. No cambies los nombres de las hojas ni de las columnas."])
     instructions.append(["2. Guarda los códigos como texto si contienen ceros a la izquierda."])
     instructions.append(["3. Cada id_sublinea debe ser único."])
-    instructions.append(["4. Cada id_linea usado en Sublineas debe existir en la hoja Lineas o en la plataforma."])
+    instructions.append(["4. Cada id_linea usado en Sublineas debe existir en la hoja Lineas."])
+    instructions.append(["5. La carga sustituye por completo el catálogo actual."])
     instructions.append([])
     instructions.append(["Ejemplo Lineas", "L01", "01", "Repuestos de motor"])
     instructions.append(["Ejemplo Sublineas", "SL001", "L01", "001", "Filtros de aceite"])
