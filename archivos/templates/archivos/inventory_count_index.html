@@ -81,13 +81,13 @@
           <input type="hidden" name="return_to" value="{{ request.get_full_path }}#conteo-vigente">
           <input type="hidden" name="carga_id" value="{{ current_load.pk }}">
           <input type="hidden" name="reconteo_id" value="{{ selected_recount.pk }}">
-          <label><span>Código existente</span><input type="text" name="codigo" maxlength="100" value="{{ new_location_code }}" autocomplete="off" required></label>
+          <label><span>Código seleccionado</span><input type="text" name="codigo" maxlength="100" value="{{ new_location_code }}" autocomplete="off" required></label>
           <label><span>Bodega</span><select name="bodega" required><option value="CENTRAL">CENTRAL</option><option value="RANSA">RANSA</option><option value="PEDREGAL">PEDREGAL</option></select></label>
           <label><span>Nueva ubicación</span><input type="text" name="ubicacion" maxlength="100" autocomplete="off" required></label>
           <label><span>Cantidad entera</span><input type="number" name="cantidad" inputmode="numeric" min="0" max="99999999999999" step="1" autocomplete="off" required></label>
           <button class="inventory-save-button" type="submit">Agregar ubicación</button>
         </form>
-        <p>Solo se admite un código que ya exista en el conteo vigente.</p>
+        <p>Se admite un código del conteo vigente o uno seleccionado por Gerencia, aunque todavía no haya sido contado.</p>
       </details>
     {% endif %}
     {% if edit_mode %}<form id="inventory-bulk-edit" method="post" action="{% url 'archivos:inventory_count_bulk_quantity' %}">{% csrf_token %}<input type="hidden" name="return_to" value="{{ request.get_full_path }}#conteo-vigente">{% if selected_recount %}<input type="hidden" name="reconteo_id" value="{{ selected_recount.pk }}">{% endif %}{% endif %}

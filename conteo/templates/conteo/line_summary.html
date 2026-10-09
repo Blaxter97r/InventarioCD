@@ -1,7 +1,7 @@
 {% extends "layouts/app_shell.html" %}
 {% load static %}
 {% block title %}Resumen por línea | Inventario 2026{% endblock %}
-{% block extra_css %}<link rel="stylesheet" href="{% static 'conteo/css/conteo.css' %}?v=20260921-1" />{% endblock %}
+{% block extra_css %}<link rel="stylesheet" href="{% static 'conteo/css/conteo.css' %}?v=20261009-2" />{% endblock %}
 {% block page_name %}Conteo · Resumen por línea{% endblock %}
 {% block page_content %}
   <div class="count-page">
@@ -23,12 +23,15 @@
     </nav>
     <div class="recount-results-heading"><h2>{{ selected_status_label }}</h2><span>{{ filtered_total }} línea{{ filtered_total|pluralize }}</span></div>
     <section class="recount-summary-card">
-      <div class="recount-summary-head" aria-hidden="true"><span>Línea</span><span># de reconteo</span><span>Status</span><span>Actualización</span></div>
+      <div class="recount-summary-head" aria-hidden="true"><span>Línea</span><span># de reconteo</span><span>Faltante</span><span>Sobrante</span><span>Neto</span><span>Status</span><span>Actualización</span></div>
       {% for item in recount_summary %}
         <details class="recount-summary-item">
           <summary class="recount-summary-trigger">
             <div class="recount-summary-line"><span class="recount-summary-chevron" aria-hidden="true">⌄</span><div class="queue-line"><span>{{ item.line.nlinea }}</span><div><strong>{{ item.line.descripcion }}</strong><small>{{ item.history|length }} carga{{ item.history|length|pluralize }} en el historial</small></div></div></div>
             <span class="recount-summary-number">{% if item.recount_number %}<strong class="recount-number">#{{ item.recount_number }}</strong>{% else %}<span class="recount-muted">—</span>{% endif %}</span>
+            <span class="recount-summary-money recount-summary-shortage"><small>Faltante</small>{% if item.shortage_total %}<strong>{{ item.shortage_total }}</strong>{% else %}<span class="recount-muted">—</span>{% endif %}</span>
+            <span class="recount-summary-money recount-summary-overage"><small>Sobrante</small>{% if item.overage_total %}<strong>{{ item.overage_total }}</strong>{% else %}<span class="recount-muted">—</span>{% endif %}</span>
+            <span class="recount-summary-money recount-summary-net"><small>Neto</small>{% if item.net_total %}<strong class="{% if item.net_is_negative %}is-negative{% else %}is-positive{% endif %}">{{ item.net_total }}</strong>{% else %}<span class="recount-muted">—</span>{% endif %}</span>
             <span class="recount-summary-state"><span class="recount-status recount-status--{{ item.status_code|lower }}">{{ item.status_label }}</span></span>
             <span class="recount-summary-updated">{% if item.load %}<span class="recount-updated">{{ item.load.fecha_finalizacion|default:item.last_progress_at|default:item.load.fecha_seleccion|default:item.load.fecha_carga|date:"d/m/Y H:i" }}</span>{% else %}<span class="recount-muted">Sin cargas</span>{% endif %}</span>
           </summary>

@@ -61,6 +61,51 @@ from .recount_analysis import build_recount_analysis
 logger = logging.getLogger(__name__)
 
 
+def _difference_cost_totals(load_ids):
+    totals = {
+        load_id: {
+            "shortage": Decimal("0.00"),
+            "overage": Decimal("0.00"),
+            "net": Decimal("0.00"),
+        }
+        for load_id in load_ids
+    }
+    if not totals:
+        return totals
+
+    differences = list(
+        Diferencia.objects.filter(carga_id__in=totals)
+        .values_list("carga_id", "codigo", "diferencia")
+    )
+    costs_by_code = {
+        codigo.upper(): costo
+        for codigo, costo in CostoProducto.objects.filter(
+            codigo__in={codigo.upper() for _, codigo, _ in differences}
+        ).values_list("codigo", "costo")
+    }
+    for load_id, code, difference in differences:
+        cost = costs_by_code.get(code.upper())
+        if cost is None:
+            continue
+        with localcontext() as context:
+            context.prec = 50
+            total = (cost * difference).quantize(
+                Decimal("0.01"),
+                rounding=ROUND_HALF_UP,
+            )
+        if total < 0:
+            totals[load_id]["shortage"] += total
+        elif total > 0:
+            totals[load_id]["overage"] += total
+        totals[load_id]["net"] += total
+    return totals
+
+
+def _format_currency(value):
+    sign = "-" if value < 0 else ""
+    return f"{sign}${abs(value):,.2f}"
+
+
 def admin_required(view):
     @login_required
     @wraps(view)
@@ -627,9 +672,17 @@ def line_summary_view(request):
     lines = list(_ordered_lines().prefetch_related(
         Prefetch("cargas_diferencias", queryset=recount_history, to_attr="historial_reconteos")
     ))
+    latest_loads = [
+        line.historial_reconteos[0]
+        for line in lines
+        if line.historial_reconteos
+    ]
+    cost_totals_by_load = _difference_cost_totals(
+        load.pk for load in latest_loads
+    )
     current_recounts = [
-        line.historial_reconteos[0] for line in lines
-        if line.historial_reconteos and line.historial_reconteos[0].estado == CargaDiferencias.Estado.RECONTEO
+        load for load in latest_loads
+        if load.estado == CargaDiferencias.Estado.RECONTEO
     ]
     codes_by_load = {load.pk: [] for load in current_recounts}
     for difference in Diferencia.objects.filter(
@@ -650,6 +703,7 @@ def line_summary_view(request):
     }
     for line in lines:
         latest = line.historial_reconteos[0] if line.historial_reconteos else None
+        cost_totals = cost_totals_by_load.get(latest.pk) if latest else None
         started = {}
         if latest is None:
             recount_number = None
@@ -737,6 +791,10 @@ def line_summary_view(request):
                 "status_code": status_code,
                 "status_label": status_label,
                 "last_progress_at": max((item.fecha_fin or item.fecha_inicio for item in started.values()), default=None),
+                "shortage_total": _format_currency(cost_totals["shortage"]) if cost_totals else None,
+                "overage_total": _format_currency(cost_totals["overage"]) if cost_totals else None,
+                "net_total": _format_currency(cost_totals["net"]) if cost_totals else None,
+                "net_is_negative": bool(cost_totals and cost_totals["net"] < 0),
                 "history": history,
             }
         )

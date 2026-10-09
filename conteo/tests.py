@@ -2647,6 +2647,64 @@ class DifferenceImportTests(TestCase):
         self.assertEqual(invalid.context["filtered_total"], 3)
         self.assertEqual(invalid.context["selected_status"], "")
 
+    def test_line_summary_shows_cost_totals_from_each_latest_load(self):
+        cost_load = CargaBaseCosto.objects.create(
+            archivo_nombre="costos.xlsx",
+            total_registros=2,
+            cargado_por=self.admin,
+        )
+        CostoProducto.objects.bulk_create([
+            CostoProducto(carga=cost_load, codigo="ABC-001", costo=Decimal("12.3456")),
+            CostoProducto(carga=cost_load, codigo="ABC-002", costo=Decimal("3.333")),
+        ])
+        old_load = CargaDiferencias.objects.create(
+            linea=self.line,
+            archivo_nombre="anterior.xlsx",
+            numero_reconteo=1,
+            estado=CargaDiferencias.Estado.FINALIZADO,
+            total_registros=1,
+            cargado_por=self.admin,
+        )
+        Diferencia.objects.create(
+            carga=old_load, sublinea="2", codigo="ABC-001",
+            ultimo_conteo=0, existencia=100, diferencia=100,
+            fecha_generacion=date(2026, 8, 7), hora_generacion=time(8, 0),
+        )
+        latest_load = CargaDiferencias.objects.create(
+            linea=self.line,
+            archivo_nombre="actual.xlsx",
+            numero_reconteo=2,
+            estado=CargaDiferencias.Estado.PENDIENTE,
+            total_registros=2,
+            cargado_por=self.admin,
+        )
+        Diferencia.objects.bulk_create([
+            Diferencia(
+                carga=latest_load, sublinea="2", codigo="ABC-001",
+                ultimo_conteo=10, existencia=8, diferencia=-2,
+                fecha_generacion=date(2026, 8, 8), hora_generacion=time(9, 0),
+            ),
+            Diferencia(
+                carga=latest_load, sublinea="2", codigo="ABC-002",
+                ultimo_conteo=5.5, existencia=7, diferencia=1.5,
+                fecha_generacion=date(2026, 8, 8), hora_generacion=time(9, 1),
+            ),
+        ])
+
+        response = self.client.get(reverse("conteo:line_summary"))
+
+        item = response.context["recount_summary"][0]
+        self.assertEqual(item["load"], latest_load)
+        self.assertEqual(item["shortage_total"], "-$24.69")
+        self.assertEqual(item["overage_total"], "$5.00")
+        self.assertEqual(item["net_total"], "-$19.69")
+        self.assertTrue(item["net_is_negative"])
+        for heading in ("Faltante", "Sobrante", "Neto"):
+            self.assertContains(response, f"<span>{heading}</span>")
+        self.assertContains(response, "-$24.69")
+        self.assertContains(response, "$5.00")
+        self.assertContains(response, "-$19.69")
+
     def test_line_summary_excludes_retired_catalog_lines(self):
         retired = Linea.objects.create(
             id_linea="ANTIGUA",

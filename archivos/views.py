@@ -379,6 +379,12 @@ def inventory_count_index_view(request):
                 .first()
                 or ""
             )
+            if not new_location_code and selected_recount:
+                normalized_query = query.upper()
+                new_location_code = next(
+                    (code for code in recount_codes if code == normalized_query),
+                    "",
+                )
 
     return render(
         request,
@@ -442,11 +448,51 @@ def inventory_count_location_view(request):
             .first()
         )
         if not existing_code:
-            messages.error(
-                request,
-                f"No se agregó la ubicación. El código {code} no pertenece al conteo vigente.",
-            )
-            return redirect(return_to)
+            from conteo.models import CargaDiferencias
+
+            try:
+                recount_id = int(request.POST.get("reconteo_id", ""))
+            except (TypeError, ValueError):
+                recount_id = None
+
+            selected_code = None
+            if recount_id:
+                recount = (
+                    CargaDiferencias.objects.filter(
+                        pk=recount_id,
+                        diferencias__seleccionada=True,
+                    )
+                    .distinct()
+                    .first()
+                )
+                if recount:
+                    latest_recount_id = (
+                        CargaDiferencias.objects.filter(
+                            linea_id=recount.linea_id,
+                            diferencias__seleccionada=True,
+                        )
+                        .order_by("-fecha_carga", "-pk")
+                        .values_list("pk", flat=True)
+                        .first()
+                    )
+                    if recount.pk == latest_recount_id:
+                        selected_code = (
+                            recount.diferencias.filter(
+                                seleccionada=True,
+                                codigo__iexact=code,
+                            )
+                            .order_by("pk")
+                            .values_list("codigo", flat=True)
+                            .first()
+                        )
+
+            if not selected_code:
+                messages.error(
+                    request,
+                    f"No se agregó la ubicación. El código {code} no pertenece al conteo vigente ni al reconteo seleccionado.",
+                )
+                return redirect(return_to)
+            existing_code = selected_code
 
         warehouse = form.cleaned_data["bodega"]
         location = form.cleaned_data["ubicacion"]

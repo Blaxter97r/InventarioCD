@@ -819,6 +819,74 @@ class InventoryCountQuantityEditTests(TestCase):
         self.assertEqual(self.load.total_bodegas, 4)
         self.assertEqual(AjusteCantidadConteoInventario.objects.count(), 3)
 
+    def test_can_add_selected_recount_code_missing_from_current_count(self):
+        missing_difference = Diferencia.objects.create(
+            carga=self.recount,
+            sublinea="01",
+            codigo="SIN-CONTAR",
+            ultimo_conteo=0,
+            existencia=4,
+            diferencia=-4,
+            fecha_generacion=timezone.localdate(),
+            hora_generacion=timezone.localtime().time(),
+            seleccionada=True,
+        )
+        index_url = reverse("archivos:inventory_count_index")
+        return_to = (
+            index_url
+            + f"?editar=1&reconteo={self.recount.pk}&q=SIN-CONTAR"
+        )
+
+        search_page = self.client.get(index_url, {
+            "editar": "1",
+            "reconteo": self.recount.pk,
+            "q": "SIN-CONTAR",
+        })
+        self.assertEqual(search_page.context["details"].paginator.count, 0)
+        self.assertContains(search_page, 'value="SIN-CONTAR"')
+
+        response = self.client.post(reverse("archivos:inventory_count_location"), {
+            "carga_id": self.load.pk,
+            "reconteo_id": self.recount.pk,
+            "codigo": "sin-contar",
+            "bodega": "CENTRAL",
+            "ubicacion": "NUEVA-99",
+            "cantidad": "4",
+            "return_to": return_to,
+        })
+        self.assertRedirects(response, return_to)
+
+        added = DetalleConteoInventario.objects.get(
+            carga=self.load,
+            codigo=missing_difference.codigo,
+            ubicacion="NUEVA-99",
+        )
+        self.assertEqual(added.cantidad, Decimal("4"))
+        self.assertTrue(AjusteCantidadConteoInventario.objects.filter(
+            detalle=added,
+            cantidad_anterior=0,
+            cantidad_nueva=4,
+            modificado_por=self.supervisor,
+        ).exists())
+        self.assertContains(self.client.get(return_to), "NUEVA-99")
+        self.assertContains(self.client.get(index_url, {"q": "SIN-CONTAR"}), "NUEVA-99")
+
+    def test_cannot_add_uncounted_code_not_selected_for_recount(self):
+        response = self.client.post(reverse("archivos:inventory_count_location"), {
+            "carga_id": self.load.pk,
+            "reconteo_id": self.recount.pk,
+            "codigo": "NO-SELECCIONADO",
+            "bodega": "CENTRAL",
+            "ubicacion": "NUEVA-98",
+            "cantidad": "1",
+        })
+
+        self.assertRedirects(response, reverse("archivos:inventory_count_index"))
+        self.assertFalse(DetalleConteoInventario.objects.filter(
+            carga=self.load,
+            codigo="NO-SELECCIONADO",
+        ).exists())
+
     def test_add_location_rejects_invalid_data_duplicates_and_historical_load(self):
         add_url = reverse("archivos:inventory_count_location")
         valid = {
