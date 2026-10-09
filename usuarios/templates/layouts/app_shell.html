@@ -66,7 +66,7 @@
           </a>
 
           <p class="sidebar-nav__label">Conteo</p>
-          <a class="sidebar-link {% if request.resolver_match.namespace == 'conteo' and request.resolver_match.url_name != 'recounts' and request.resolver_match.url_name != 'line_summary' and request.resolver_match.url_name != 'progress' and request.resolver_match.url_name != 'progress_general' and request.resolver_match.url_name != 'progress_differences' %}is-active{% endif %}" href="{% if can_validate_differences %}{% url 'conteo:pending_queue' %}{% else %}{% url 'conteo:differences_index' %}{% endif %}" title="Diferencias" aria-label="Diferencias">
+          <a class="sidebar-link {% if request.resolver_match.namespace == 'conteo' and request.resolver_match.url_name != 'recounts' and request.resolver_match.url_name != 'line_summary' and request.resolver_match.url_name != 'recount_analysis' and request.resolver_match.url_name != 'progress' and request.resolver_match.url_name != 'progress_general' and request.resolver_match.url_name != 'progress_differences' %}is-active{% endif %}" href="{% if can_validate_differences %}{% url 'conteo:pending_queue' %}{% else %}{% url 'conteo:differences_index' %}{% endif %}" title="Diferencias" aria-label="Diferencias">
             <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h16v14H4z" /><path d="M8 9h8M8 13h3M14 13h2M8 17h5" /></svg>
             <span>Diferencias</span>
             {% if can_validate_differences and pending_recounts %}<b class="sidebar-link__badge">{{ pending_recounts }}</b>{% endif %}
@@ -79,6 +79,10 @@
           <a class="sidebar-link {% if request.resolver_match.namespace == 'conteo' and request.resolver_match.url_name == 'line_summary' %}is-active{% endif %}" href="{% url 'conteo:line_summary' %}" title="Resumen por línea" aria-label="Resumen por línea">
             <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h16v14H4zM8 9h8M8 13h8M8 17h5" /></svg>
             <span>Resumen por línea</span>
+          </a>
+          <a class="sidebar-link {% if request.resolver_match.namespace == 'conteo' and request.resolver_match.url_name == 'recount_analysis' %}is-active{% endif %}" href="{% url 'conteo:recount_analysis' %}" title="Análisis por línea" aria-label="Análisis por línea">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 19V5h16v14zM8 15l3-3 3 2 3-5M8 9h2" /></svg>
+            <span>Análisis por línea</span>
           </a>
           <details class="sidebar-group" {% if request.resolver_match.namespace == 'conteo' and request.resolver_match.url_name == 'progress' or request.resolver_match.namespace == 'conteo' and request.resolver_match.url_name == 'progress_general' or request.resolver_match.namespace == 'conteo' and request.resolver_match.url_name == 'progress_differences' %}open{% endif %}>
             <summary class="sidebar-link {% if request.resolver_match.namespace == 'conteo' and request.resolver_match.url_name == 'progress' or request.resolver_match.namespace == 'conteo' and request.resolver_match.url_name == 'progress_general' or request.resolver_match.namespace == 'conteo' and request.resolver_match.url_name == 'progress_differences' %}is-active{% endif %}" title="Avance" aria-label="Mostrar opciones de avance">

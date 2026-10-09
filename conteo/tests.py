@@ -49,6 +49,7 @@ from .recount_reports import (
     _product_rows,
     _report_styles,
 )
+from .recount_analysis import build_recount_analysis
 
 
 TEST_MEDIA_ROOT = tempfile.mkdtemp(prefix="inventario-conteo-tests-")
@@ -1242,6 +1243,7 @@ class DifferenceAccessTests(TestCase):
             "conteo:differences_index",
             "conteo:recounts",
             "conteo:line_summary",
+            "conteo:recount_analysis",
             "conteo:progress",
             "conteo:progress_general",
         )
@@ -1348,6 +1350,116 @@ class DifferenceImportTests(TestCase):
             totals,
             {"faltante": "-24.69", "sobrante": "5.00", "diferencia_neta": "-19.69"},
         )
+
+    def test_recount_analysis_applies_warehouse_matrix_and_audit_rule(self):
+        ransa_line = Linea.objects.create(
+            id_linea="L02", nlinea="2", descripcion="Línea mixta"
+        )
+        first_load = CargaDiferencias.objects.create(
+            linea=self.line,
+            archivo_nombre="linea-1.xlsx",
+            numero_reconteo=1,
+            estado=CargaDiferencias.Estado.RECONTEO,
+            cargado_por=self.admin,
+            seleccionado_por=self.admin,
+            fecha_seleccion=timezone.now(),
+        )
+        mixed_load = CargaDiferencias.objects.create(
+            linea=ransa_line,
+            archivo_nombre="linea-2.xlsx",
+            numero_reconteo=1,
+            estado=CargaDiferencias.Estado.RECONTEO,
+            cargado_por=self.admin,
+            seleccionado_por=self.admin,
+            fecha_seleccion=timezone.now(),
+        )
+        for load, code in (
+            (first_load, "SOLO-CD"),
+            (first_load, "EXCEDENTE-RANSA"),
+            (first_load, "EXCEDENTE-CD-RANSA"),
+            (mixed_load, "PICKING-CD"),
+            (mixed_load, "PICKING-RANSA"),
+            (mixed_load, "PICKING-PEDREGAL"),
+        ):
+            Diferencia.objects.create(
+                carga=load,
+                sublinea="1",
+                codigo=code,
+                ultimo_conteo=2,
+                existencia=1,
+                diferencia=1,
+                fecha_generacion=date(2026, 8, 17),
+                hora_generacion=time(9, 30),
+                seleccionada=True,
+            )
+
+        locations = (
+            ("C-P", "CENTRAL", "Primario"),
+            ("C-S", "CENTRAL", "Secundario"),
+            ("R-P", "RANSA", "Primario"),
+            ("R-S", "RANSA", "Secundario"),
+            ("P-P", "PEDREGAL", "Primario"),
+            ("P-S", "PEDREGAL", "Secundario"),
+        )
+        for location, warehouse, location_type in locations:
+            Ubicacion.objects.create(
+                ubicacion=location,
+                bodega=warehouse,
+                sector="Piso",
+                tipo=location_type,
+            )
+        rge = CargaRGE.objects.create(
+            archivo_nombre="rge.xlsx", cargado_por=self.admin
+        )
+        for code, location in (
+            ("SOLO-CD", "C-P"),
+            ("SOLO-CD", "C-S"),
+            ("EXCEDENTE-RANSA", "C-P"),
+            ("EXCEDENTE-RANSA", "R-S"),
+            ("EXCEDENTE-CD-RANSA", "C-P"),
+            ("EXCEDENTE-CD-RANSA", "C-S"),
+            ("EXCEDENTE-CD-RANSA", "R-S"),
+            ("PICKING-CD", "C-P"),
+            ("PICKING-CD", "C-S"),
+            ("PICKING-RANSA", "R-P"),
+            ("PICKING-RANSA", "R-S"),
+            ("PICKING-PEDREGAL", "P-P"),
+            ("PICKING-PEDREGAL", "P-S"),
+        ):
+            DetalleRGE.objects.create(
+                carga=rge, codigo=code, ubicacion=location, cantidad=1
+            )
+
+        analysis = build_recount_analysis()
+
+        self.assertEqual([item["line"].nlinea for item in analysis], ["1", "2"])
+        first_rows = {row["codigo"]: row for row in analysis[0]["rows"]}
+        self.assertEqual(first_rows["SOLO-CD"]["primary_label"], "CD")
+        self.assertEqual(first_rows["SOLO-CD"]["secondary_label"], "CD")
+        self.assertEqual(
+            first_rows["SOLO-CD"]["comment"],
+            "No recibirás nada de otra bodega.",
+        )
+        self.assertEqual(first_rows["EXCEDENTE-RANSA"]["secondary_label"], "RANSA")
+        self.assertEqual(
+            first_rows["EXCEDENTE-RANSA"]["comment"],
+            "Recibirás solo excedente de otra bodega.",
+        )
+        self.assertEqual(
+            first_rows["EXCEDENTE-CD-RANSA"]["secondary_label"],
+            "CD Y RANSA",
+        )
+        self.assertEqual(analysis[1]["audit_warehouses"], {"ransa", "pedregal"})
+        self.assertEqual(
+            {row["comment"] for row in analysis[1]["rows"]},
+            {"Esperar folleto de auditoría de RANSA y PEDREGAL."},
+        )
+
+        page = self.client.get(reverse("conteo:recount_analysis"))
+        self.assertEqual(page.status_code, 200)
+        self.assertContains(page, "Análisis por línea")
+        self.assertContains(page, "Primarios en diferentes bodegas")
+        self.assertContains(page, "EXCEDENTE-RANSA")
 
     def test_as400_pdf_is_saved_and_appended_to_each_warehouse_report(self):
         workbook = make_difference_workbook(
@@ -1639,6 +1751,52 @@ class DifferenceImportTests(TestCase):
         self.assertNotIn("PEDREGAL", pdf_text)
         self.assertNotIn("R-01", pdf_text)
         self.assertNotIn("NO-ELEGIDO", pdf_text)
+
+    def test_recount_pdf_orders_surplus_codes_before_other_differences(self):
+        load = CargaDiferencias.objects.create(
+            linea=self.line,
+            archivo_nombre="diferencias.xlsx",
+            numero_reconteo=1,
+            estado=CargaDiferencias.Estado.RECONTEO,
+            cargado_por=self.admin,
+            seleccionado_por=self.admin,
+        )
+        count_load = CargaConteoInventario.objects.create(
+            archivo_nombre="conteo.xlsx", cargado_por=self.admin
+        )
+        Ubicacion.objects.create(
+            ubicacion="C-01", bodega="CENTRAL", sector="Piso", tipo="Primario"
+        )
+        for code, subline, last_count, stock in (
+            ("FALTANTE-PRIMERO-ALFABETICAMENTE", "01", 2, 5),
+            ("EXCEDENTE-B", "03", 8, 5),
+            ("EXCEDENTE-A", "02", 7, 5),
+        ):
+            Diferencia.objects.create(
+                carga=load,
+                sublinea=subline,
+                codigo=code,
+                ultimo_conteo=last_count,
+                existencia=stock,
+                diferencia=last_count - stock,
+                fecha_generacion=date(2026, 8, 17),
+                hora_generacion=time(9, 30),
+                seleccionada=True,
+            )
+            DetalleConteoInventario.objects.create(
+                carga=count_load,
+                bodega="CENTRAL",
+                ubicacion="C-01",
+                codigo=code,
+                cantidad=last_count,
+            )
+
+        rows = _product_rows(load, "central")
+
+        self.assertEqual(
+            [row["base"][3] for row in rows],
+            ["EXCEDENTE-A", "EXCEDENTE-B", "FALTANTE-PRIMERO-ALFABETICAMENTE"],
+        )
 
     def test_recount_pdf_location_decision_matrix(self):
         warehouses = ("central", "ransa", "pedregal")
@@ -2450,6 +2608,31 @@ class DifferenceImportTests(TestCase):
         invalid = self.client.get(reverse("conteo:line_summary"), {"estado": "desconocido"})
         self.assertEqual(invalid.context["filtered_total"], 3)
         self.assertEqual(invalid.context["selected_status"], "")
+
+    def test_line_summary_excludes_retired_catalog_lines(self):
+        retired = Linea.objects.create(
+            id_linea="ANTIGUA",
+            nlinea=self.line.nlinea,
+            descripcion="Versión anterior",
+            activa=False,
+        )
+        CargaDiferencias.objects.create(
+            linea=retired,
+            archivo_nombre="historico.xlsx",
+            numero_reconteo=1,
+            estado=CargaDiferencias.Estado.FINALIZADO,
+            total_registros=1,
+            cargado_por=self.admin,
+        )
+
+        response = self.client.get(reverse("conteo:line_summary"))
+
+        self.assertEqual(response.context["line_total"], 1)
+        self.assertEqual(
+            [item["line"].pk for item in response.context["recount_summary"]],
+            [self.line.pk],
+        )
+        self.assertNotContains(response, "Versión anterior")
 
     def test_manager_can_download_original_file(self):
         workbook = make_difference_workbook(

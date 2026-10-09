@@ -342,6 +342,13 @@ def _product_rows(load, warehouse_key):
                 ],
             }
         )
+    rows.sort(
+        key=lambda row: (
+            0 if row["calculated_difference"] > 0 else 1,
+            str(row["base"][1] or ""),
+            str(row["base"][3] or ""),
+        )
+    )
     return rows
 
 

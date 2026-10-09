@@ -1,0 +1,64 @@
+{% extends "layouts/app_shell.html" %}
+{% load static %}
+{% block title %}Análisis por línea | Inventario 2026{% endblock %}
+{% block extra_css %}<link rel="stylesheet" href="{% static 'conteo/css/conteo.css' %}?v=20261009-1" />{% endblock %}
+{% block page_name %}Conteo · Análisis por línea{% endblock %}
+{% block page_content %}
+  <div class="count-page recount-analysis-page">
+    <div class="count-heading queue-heading">
+      <div>
+        <p class="count-eyebrow">Distribución entre bodegas</p>
+        <h1>Análisis por línea</h1>
+        <p>Ubicaciones Primario y Secundario de los códigos seleccionados por Gerencia para reconteo.</p>
+      </div>
+      <div class="recount-analysis-totals" aria-label="Totales del análisis">
+        <span><strong>{{ line_total }}</strong> línea{{ line_total|pluralize }}</span>
+        <span><strong>{{ code_total }}</strong> código{{ code_total|pluralize }}</span>
+      </div>
+    </div>
+
+    <aside class="recount-analysis-rule">
+      <span aria-hidden="true">i</span>
+      <div><strong>Criterio del comentario</strong><p>Si Primario y Secundario pertenecen a la misma bodega, no se espera producto de otra. Si Secundario incluye otra bodega, se recibe únicamente su excedente.</p></div>
+    </aside>
+
+    <section class="recount-analysis-list">
+      {% for item in line_analysis %}
+        <article class="recount-analysis-card">
+          <header class="recount-analysis-card__header">
+            <div class="queue-line">
+              <span>{{ item.line.nlinea }}</span>
+              <div><strong>{{ item.line.descripcion }}</strong><small>Reconteo #{{ item.load.numero_reconteo }} · {{ item.code_count }} código{{ item.code_count|pluralize }} · {{ item.combination_count }} combinación{{ item.combination_count|pluralize:"es" }}</small></div>
+            </div>
+            <div class="recount-analysis-selected"><span>Seleccionados por</span><strong>{{ item.load.seleccionado_por.get_full_name|default:item.load.seleccionado_por.username }}</strong></div>
+          </header>
+
+          {% if item.audit_comment %}
+            <div class="recount-analysis-audit" role="alert">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3 2.5 20h19zM12 9v5M12 17.5v.5" /></svg>
+              <div><strong>Primarios en diferentes bodegas</strong><p>{{ item.audit_comment }} Los códigos de esta línea no deben cerrarse hasta recibirlo.</p></div>
+            </div>
+          {% endif %}
+
+          <div class="recount-analysis-table-wrap">
+            <table class="recount-analysis-table">
+              <thead><tr><th>Código</th><th>Primario</th><th>Secundario</th><th>Comentario</th></tr></thead>
+              <tbody>
+                {% for row in item.rows %}
+                  <tr>
+                    <td><strong class="product-code">{{ row.codigo }}</strong><small>Sublínea {{ row.sublinea|default:"—" }}</small></td>
+                    <td><span class="warehouse-combination {% if not row.primary %}is-missing{% endif %}">{{ row.primary_label }}</span></td>
+                    <td><span class="warehouse-combination {% if not row.secondary %}is-missing{% endif %}">{{ row.secondary_label }}</span></td>
+                    <td><span class="analysis-comment {% if item.audit_comment %}is-audit{% elif 'excedente' in row.comment %}is-transfer{% endif %}">{{ row.comment }}</span></td>
+                  </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+        </article>
+      {% empty %}
+        <div class="queue-empty"><span>✓</span><h2>No hay líneas para analizar</h2><p>Cuando Gerencia seleccione códigos de una línea para reconteo, sus combinaciones de bodega aparecerán aquí.</p></div>
+      {% endfor %}
+    </section>
+  </div>
+{% endblock %}

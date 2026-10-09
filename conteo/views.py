@@ -55,6 +55,7 @@ from .progress_reports import (
     secondary_quantity_difference_rows_for_aisles,
 )
 from .recount_reports import WAREHOUSES, attach_warehouse_options, build_recount_pdf
+from .recount_analysis import build_recount_analysis
 
 
 logger = logging.getLogger(__name__)
@@ -620,7 +621,10 @@ def line_summary_view(request):
         .prefetch_related("inicios_bodega")
         .order_by("-fecha_carga", "-pk")
     )
-    lines = list(_ordered_lines(include_inactive=True).prefetch_related(
+    # El resumen debe reflejar el catálogo vigente. Las líneas retiradas se
+    # conservan en la base para no perder su historial, pero no deben reaparecer
+    # como filas duplicadas después de sustituir el catálogo.
+    lines = list(_ordered_lines().prefetch_related(
         Prefetch("cargas_diferencias", queryset=recount_history, to_attr="historial_reconteos")
     ))
     current_recounts = [
@@ -749,6 +753,20 @@ def line_summary_view(request):
             "selected_status_label": dict(status_filters).get(selected_status, "Todas las líneas"),
             "status_filters": status_filters,
             "status_counts": status_counts,
+        },
+    )
+
+
+@login_required
+def recount_analysis_view(request):
+    analysis = build_recount_analysis()
+    return render(
+        request,
+        "conteo/recount_analysis.html",
+        {
+            "line_analysis": analysis,
+            "line_total": len(analysis),
+            "code_total": sum(item["code_count"] for item in analysis),
         },
     )
 
