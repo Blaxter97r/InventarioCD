@@ -30,7 +30,7 @@
             <tbody>
               {% for item in line_analysis %}
                 <tr>
-                  <td><div class="analysis-line"><span>{{ item.line.nlinea }}</span><div><strong>{{ item.line.descripcion }}</strong><small>Reconteo #{{ item.load.numero_reconteo }} · {{ item.combination_count }} combinación{{ item.combination_count|pluralize:"es" }}</small></div></div></td>
+                  <td><div class="analysis-line"><span>{{ item.line.nlinea }}</span><div><strong>{{ item.line.descripcion }}</strong><small>Reconteo #{{ item.load.numero_reconteo }}{% if item.load.fecha_finalizacion %} · Finalizado{% endif %} · {{ item.combination_count }} combinación{{ item.combination_count|pluralize:"es" }}</small></div></div></td>
                   <td><strong class="analysis-code-count">{{ item.code_count }}</strong><small>Seleccionados por {{ item.load.seleccionado_por.get_full_name|default:item.load.seleccionado_por.username }}</small></td>
                   <td><span class="warehouse-combination {% if item.primary_label == 'SIN DATOS' %}is-missing{% endif %}">{{ item.primary_label }}</span></td>
                   <td><span class="warehouse-combination {% if item.secondary_label == 'SIN DATOS' %}is-missing{% endif %}">{{ item.secondary_label }}</span></td>

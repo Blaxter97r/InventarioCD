@@ -1496,6 +1496,69 @@ class DifferenceImportTests(TestCase):
         self.assertContains(page, "Esperar folleto")
         self.assertNotContains(page, "EXCEDENTE-RANSA")
 
+    def test_recount_analysis_keeps_finished_recount_until_next_selection(self):
+        finished_load = CargaDiferencias.objects.create(
+            linea=self.line,
+            archivo_nombre="reconteo-finalizado.xlsx",
+            numero_reconteo=1,
+            estado=CargaDiferencias.Estado.RECONTEO,
+            cargado_por=self.admin,
+            seleccionado_por=self.admin,
+            fecha_seleccion=timezone.now(),
+            fecha_finalizacion=timezone.now(),
+            finalizado_por=self.admin,
+        )
+        Diferencia.objects.create(
+            carga=finished_load,
+            sublinea="1",
+            codigo="ANTERIOR-001",
+            ultimo_conteo=2,
+            existencia=1,
+            diferencia=1,
+            fecha_generacion=date(2026, 8, 17),
+            hora_generacion=time(9, 30),
+            seleccionada=True,
+        )
+
+        finished_analysis = build_recount_analysis()
+        self.assertEqual([item["load"] for item in finished_analysis], [finished_load])
+        self.assertContains(
+            self.client.get(reverse("conteo:recount_analysis")),
+            "Reconteo #1 · Finalizado",
+        )
+
+        pending_load = CargaDiferencias.objects.create(
+            linea=self.line,
+            archivo_nombre="nueva-carga.xlsx",
+            numero_reconteo=2,
+            estado=CargaDiferencias.Estado.PENDIENTE,
+            cargado_por=self.admin,
+        )
+        new_difference = Diferencia.objects.create(
+            carga=pending_load,
+            sublinea="1",
+            codigo="NUEVO-002",
+            ultimo_conteo=3,
+            existencia=1,
+            diferencia=2,
+            fecha_generacion=date(2026, 8, 18),
+            hora_generacion=time(10, 0),
+        )
+
+        waiting_analysis = build_recount_analysis()
+        self.assertEqual([item["load"] for item in waiting_analysis], [finished_load])
+
+        new_difference.seleccionada = True
+        new_difference.save(update_fields=("seleccionada",))
+        pending_load.estado = CargaDiferencias.Estado.RECONTEO
+        pending_load.seleccionado_por = self.admin
+        pending_load.fecha_seleccion = timezone.now()
+        pending_load.save(update_fields=("estado", "seleccionado_por", "fecha_seleccion"))
+
+        refreshed_analysis = build_recount_analysis()
+        self.assertEqual([item["load"] for item in refreshed_analysis], [pending_load])
+        self.assertEqual(refreshed_analysis[0]["code_count"], 1)
+
     def test_as400_pdf_is_saved_and_appended_to_each_warehouse_report(self):
         workbook = make_difference_workbook(
             [("1", "2", "ABC-001", 10, 8, -2, "C-01", "R-01", "", "", date(2026, 8, 8), time(14, 30))]

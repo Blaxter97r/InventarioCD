@@ -117,20 +117,23 @@ def _location_assignments(codes):
 
 
 def build_recount_analysis():
-    """Construye el análisis de ubicaciones del reconteo vigente por línea."""
+    """Construye el análisis del último reconteo seleccionado por línea."""
     selected_codes = Diferencia.objects.filter(seleccionada=True).order_by(
         "sublinea", "codigo", "pk"
     )
-    latest_load_id = (
-        CargaDiferencias.objects.filter(linea_id=OuterRef("linea_id"))
+    latest_recount_id = (
+        CargaDiferencias.objects.filter(
+            linea_id=OuterRef("linea_id"),
+            estado=CargaDiferencias.Estado.RECONTEO,
+            diferencias__seleccionada=True,
+        )
         .order_by("-fecha_carga", "-pk")
         .values("pk")[:1]
     )
     loads = list(
         CargaDiferencias.objects.filter(
-            pk=Subquery(latest_load_id),
+            pk=Subquery(latest_recount_id),
             estado=CargaDiferencias.Estado.RECONTEO,
-            fecha_finalizacion__isnull=True,
             diferencias__seleccionada=True,
             linea__activa=True,
         )
