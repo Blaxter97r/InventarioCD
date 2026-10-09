@@ -159,8 +159,6 @@ def build_recount_analysis():
         seen_codes = set()
         primary_warehouses = set()
         secondary_warehouses = set()
-        missing_primary = []
-        missing_secondary = []
         combinations = set()
         for difference in load.codigos_analisis:
             code = _normalize(difference.codigo)
@@ -172,10 +170,6 @@ def build_recount_analysis():
             secondary = set(placement["secondary"])
             primary_warehouses.update(primary)
             secondary_warehouses.update(secondary)
-            if not primary:
-                missing_primary.append(difference.codigo)
-            if not secondary:
-                missing_secondary.append(difference.codigo)
             combinations.add((_warehouse_text(primary), _warehouse_text(secondary)))
 
         audit_warehouses = (
@@ -188,20 +182,22 @@ def build_recount_analysis():
             condition = "audit"
             condition_label = "Esperar folleto"
             comment = audit_comment
-        elif missing_primary:
+        elif primary_warehouses in ({"ransa"}, {"pedregal"}):
+            warehouse_name = _warehouse_names(primary_warehouses)
+            condition = "external_line"
+            condition_label = f"Línea {warehouse_name}"
+            comment = (
+                f"LÍNEA {warehouse_name}. "
+                "Ellos deben enviar el reconteo al CD."
+            )
+        elif not primary_warehouses:
             condition = "review"
             condition_label = "Revisar ubicaciones"
-            comment = (
-                f"No se pudo identificar el Primario de {len(missing_primary)} "
-                f"código{'s' if len(missing_primary) != 1 else ''}."
-            )
-        elif missing_secondary:
+            comment = "No se pudo identificar ningún Primario para esta línea."
+        elif not secondary_warehouses:
             condition = "review"
             condition_label = "Revisar ubicaciones"
-            comment = (
-                f"No se pudo identificar el Secundario de {len(missing_secondary)} "
-                f"código{'s' if len(missing_secondary) != 1 else ''}."
-            )
+            comment = "No se pudo identificar ningún Secundario para esta línea."
         else:
             other_secondary = secondary_warehouses - primary_warehouses
             if other_secondary:

@@ -769,6 +769,7 @@
 .analysis-condition { display: inline-flex; padding: 5px 8px; border-radius: 6px; font-size: 8px; font-weight: 800; letter-spacing: .35px; text-transform: uppercase; }
 .analysis-condition--same_warehouse { color: #53666b; background: #edf2f3; }
 .analysis-condition--surplus { color: #126b60; background: #dff3ef; }
+.analysis-condition--external_line { color: #075f74; background: #dff2f6; }
 .analysis-condition--audit { color: #895d0a; background: #fff0ca; }
 .analysis-condition--review { color: #9a463e; background: #fde5e2; }
 .analysis-line-comment { margin: 7px 0 0; color: #465c62; font-size: 10px; font-weight: 600; line-height: 1.45; }

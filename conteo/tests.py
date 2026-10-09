@@ -1358,6 +1358,9 @@ class DifferenceImportTests(TestCase):
         same_line = Linea.objects.create(
             id_linea="L03", nlinea="3", descripcion="Línea solo CD"
         )
+        pedregal_line = Linea.objects.create(
+            id_linea="L09", nlinea="9", descripcion="Línea Kensei"
+        )
         first_load = CargaDiferencias.objects.create(
             linea=self.line,
             archivo_nombre="linea-1.xlsx",
@@ -1385,6 +1388,15 @@ class DifferenceImportTests(TestCase):
             seleccionado_por=self.admin,
             fecha_seleccion=timezone.now(),
         )
+        pedregal_load = CargaDiferencias.objects.create(
+            linea=pedregal_line,
+            archivo_nombre="linea-9.xlsx",
+            numero_reconteo=1,
+            estado=CargaDiferencias.Estado.RECONTEO,
+            cargado_por=self.admin,
+            seleccionado_por=self.admin,
+            fecha_seleccion=timezone.now(),
+        )
         for load, code in (
             (first_load, "SOLO-CD"),
             (first_load, "EXCEDENTE-RANSA"),
@@ -1393,6 +1405,8 @@ class DifferenceImportTests(TestCase):
             (mixed_load, "PICKING-RANSA"),
             (mixed_load, "PICKING-PEDREGAL"),
             (same_load, "SOLO-MISMA-BODEGA"),
+            (pedregal_load, "PEDREGAL-CON-PRIMARIO"),
+            (pedregal_load, "PEDREGAL-SIN-PRIMARIO"),
         ):
             Diferencia.objects.create(
                 carga=load,
@@ -1440,6 +1454,8 @@ class DifferenceImportTests(TestCase):
             ("PICKING-PEDREGAL", "P-S"),
             ("SOLO-MISMA-BODEGA", "C-P"),
             ("SOLO-MISMA-BODEGA", "C-S"),
+            ("PEDREGAL-CON-PRIMARIO", "P-P"),
+            ("PEDREGAL-CON-PRIMARIO", "P-S"),
         ):
             DetalleRGE.objects.create(
                 carga=rge, codigo=code, ubicacion=location, cantidad=1
@@ -1447,7 +1463,10 @@ class DifferenceImportTests(TestCase):
 
         analysis = build_recount_analysis()
 
-        self.assertEqual([item["line"].nlinea for item in analysis], ["1", "2", "3"])
+        self.assertEqual(
+            [item["line"].nlinea for item in analysis],
+            ["1", "2", "3", "9"],
+        )
         self.assertEqual(analysis[0]["primary_label"], "CD")
         self.assertEqual(analysis[0]["secondary_label"], "CD Y RANSA")
         self.assertEqual(analysis[0]["condition"], "surplus")
@@ -1462,6 +1481,12 @@ class DifferenceImportTests(TestCase):
         self.assertEqual(
             analysis[2]["comment"],
             "No recibirás nada de otra bodega.",
+        )
+        self.assertEqual(analysis[3]["condition"], "external_line")
+        self.assertEqual(analysis[3]["condition_label"], "Línea PEDREGAL")
+        self.assertEqual(
+            analysis[3]["comment"],
+            "LÍNEA PEDREGAL. Ellos deben enviar el reconteo al CD.",
         )
 
         page = self.client.get(reverse("conteo:recount_analysis"))
