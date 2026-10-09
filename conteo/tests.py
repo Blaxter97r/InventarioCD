@@ -1355,6 +1355,9 @@ class DifferenceImportTests(TestCase):
         ransa_line = Linea.objects.create(
             id_linea="L02", nlinea="2", descripcion="Línea mixta"
         )
+        same_line = Linea.objects.create(
+            id_linea="L03", nlinea="3", descripcion="Línea solo CD"
+        )
         first_load = CargaDiferencias.objects.create(
             linea=self.line,
             archivo_nombre="linea-1.xlsx",
@@ -1373,6 +1376,15 @@ class DifferenceImportTests(TestCase):
             seleccionado_por=self.admin,
             fecha_seleccion=timezone.now(),
         )
+        same_load = CargaDiferencias.objects.create(
+            linea=same_line,
+            archivo_nombre="linea-3.xlsx",
+            numero_reconteo=1,
+            estado=CargaDiferencias.Estado.RECONTEO,
+            cargado_por=self.admin,
+            seleccionado_por=self.admin,
+            fecha_seleccion=timezone.now(),
+        )
         for load, code in (
             (first_load, "SOLO-CD"),
             (first_load, "EXCEDENTE-RANSA"),
@@ -1380,6 +1392,7 @@ class DifferenceImportTests(TestCase):
             (mixed_load, "PICKING-CD"),
             (mixed_load, "PICKING-RANSA"),
             (mixed_load, "PICKING-PEDREGAL"),
+            (same_load, "SOLO-MISMA-BODEGA"),
         ):
             Diferencia.objects.create(
                 carga=load,
@@ -1425,6 +1438,8 @@ class DifferenceImportTests(TestCase):
             ("PICKING-RANSA", "R-S"),
             ("PICKING-PEDREGAL", "P-P"),
             ("PICKING-PEDREGAL", "P-S"),
+            ("SOLO-MISMA-BODEGA", "C-P"),
+            ("SOLO-MISMA-BODEGA", "C-S"),
         ):
             DetalleRGE.objects.create(
                 carga=rge, codigo=code, ubicacion=location, cantidad=1
@@ -1432,34 +1447,29 @@ class DifferenceImportTests(TestCase):
 
         analysis = build_recount_analysis()
 
-        self.assertEqual([item["line"].nlinea for item in analysis], ["1", "2"])
-        first_rows = {row["codigo"]: row for row in analysis[0]["rows"]}
-        self.assertEqual(first_rows["SOLO-CD"]["primary_label"], "CD")
-        self.assertEqual(first_rows["SOLO-CD"]["secondary_label"], "CD")
-        self.assertEqual(
-            first_rows["SOLO-CD"]["comment"],
-            "No recibirás nada de otra bodega.",
-        )
-        self.assertEqual(first_rows["EXCEDENTE-RANSA"]["secondary_label"], "RANSA")
-        self.assertEqual(
-            first_rows["EXCEDENTE-RANSA"]["comment"],
-            "Recibirás solo excedente de otra bodega.",
-        )
-        self.assertEqual(
-            first_rows["EXCEDENTE-CD-RANSA"]["secondary_label"],
-            "CD Y RANSA",
-        )
+        self.assertEqual([item["line"].nlinea for item in analysis], ["1", "2", "3"])
+        self.assertEqual(analysis[0]["primary_label"], "CD")
+        self.assertEqual(analysis[0]["secondary_label"], "CD Y RANSA")
+        self.assertEqual(analysis[0]["condition"], "surplus")
+        self.assertEqual(analysis[0]["comment"], "Recibirás solo excedente de RANSA.")
         self.assertEqual(analysis[1]["audit_warehouses"], {"ransa", "pedregal"})
+        self.assertEqual(analysis[1]["condition"], "audit")
         self.assertEqual(
-            {row["comment"] for row in analysis[1]["rows"]},
-            {"Esperar folleto de auditoría de RANSA y PEDREGAL."},
+            analysis[1]["comment"],
+            "Esperar folleto de auditoría de RANSA y PEDREGAL.",
+        )
+        self.assertEqual(analysis[2]["condition"], "same_warehouse")
+        self.assertEqual(
+            analysis[2]["comment"],
+            "No recibirás nada de otra bodega.",
         )
 
         page = self.client.get(reverse("conteo:recount_analysis"))
         self.assertEqual(page.status_code, 200)
         self.assertContains(page, "Análisis por línea")
-        self.assertContains(page, "Primarios en diferentes bodegas")
-        self.assertContains(page, "EXCEDENTE-RANSA")
+        self.assertContains(page, "Conclusión de la línea")
+        self.assertContains(page, "Esperar folleto")
+        self.assertNotContains(page, "EXCEDENTE-RANSA")
 
     def test_as400_pdf_is_saved_and_appended_to_each_warehouse_report(self):
         workbook = make_difference_workbook(

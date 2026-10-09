@@ -58,6 +58,15 @@ def _audit_comment(warehouses):
     return f"Esperar folleto de auditoría de {joined}."
 
 
+def _warehouse_names(warehouses):
+    labels = [
+        WAREHOUSE_LABELS[key]
+        for key in WAREHOUSE_ORDER
+        if key in warehouses
+    ]
+    return " y ".join(labels)
+
+
 def _location_assignments(codes):
     assignments = defaultdict(lambda: {"primary": set(), "secondary": set()})
     if not codes:
@@ -147,9 +156,12 @@ def build_recount_analysis():
     assignments = _location_assignments(all_codes)
     analysis = []
     for load in loads:
-        rows = []
         seen_codes = set()
         primary_warehouses = set()
+        secondary_warehouses = set()
+        missing_primary = []
+        missing_secondary = []
+        combinations = set()
         for difference in load.codigos_analisis:
             code = _normalize(difference.codigo)
             if not code or code in seen_codes:
@@ -159,25 +171,12 @@ def build_recount_analysis():
             primary = set(placement["primary"])
             secondary = set(placement["secondary"])
             primary_warehouses.update(primary)
+            secondary_warehouses.update(secondary)
             if not primary:
-                comment = "Revisar ubicación: el código no tiene Primario identificado."
-            elif not secondary:
-                comment = "Revisar ubicación: el código no tiene Secundario identificado."
-            elif secondary - primary:
-                comment = "Recibirás solo excedente de otra bodega."
-            else:
-                comment = "No recibirás nada de otra bodega."
-            rows.append(
-                {
-                    "codigo": difference.codigo,
-                    "sublinea": difference.sublinea,
-                    "primary": primary,
-                    "secondary": secondary,
-                    "primary_label": _warehouse_text(primary),
-                    "secondary_label": _warehouse_text(secondary),
-                    "comment": comment,
-                }
-            )
+                missing_primary.append(difference.codigo)
+            if not secondary:
+                missing_secondary.append(difference.codigo)
+            combinations.add((_warehouse_text(primary), _warehouse_text(secondary)))
 
         audit_warehouses = (
             primary_warehouses - {"central"}
@@ -186,19 +185,47 @@ def build_recount_analysis():
         )
         audit_comment = _audit_comment(audit_warehouses) if audit_warehouses else ""
         if audit_comment:
-            for row in rows:
-                row["comment"] = audit_comment
-        combinations = {
-            (row["primary_label"], row["secondary_label"])
-            for row in rows
-        }
+            condition = "audit"
+            condition_label = "Esperar folleto"
+            comment = audit_comment
+        elif missing_primary:
+            condition = "review"
+            condition_label = "Revisar ubicaciones"
+            comment = (
+                f"No se pudo identificar el Primario de {len(missing_primary)} "
+                f"código{'s' if len(missing_primary) != 1 else ''}."
+            )
+        elif missing_secondary:
+            condition = "review"
+            condition_label = "Revisar ubicaciones"
+            comment = (
+                f"No se pudo identificar el Secundario de {len(missing_secondary)} "
+                f"código{'s' if len(missing_secondary) != 1 else ''}."
+            )
+        else:
+            other_secondary = secondary_warehouses - primary_warehouses
+            if other_secondary:
+                condition = "surplus"
+                condition_label = "Solo excedente"
+                comment = (
+                    "Recibirás solo excedente de "
+                    f"{_warehouse_names(other_secondary)}."
+                )
+            else:
+                condition = "same_warehouse"
+                condition_label = "Misma bodega"
+                comment = "No recibirás nada de otra bodega."
         analysis.append(
             {
                 "load": load,
                 "line": load.linea,
-                "rows": rows,
-                "code_count": len(rows),
+                "code_count": len(seen_codes),
                 "combination_count": len(combinations),
+                "primary_label": _warehouse_text(primary_warehouses),
+                "secondary_label": _warehouse_text(secondary_warehouses),
+                "condition": condition,
+                "condition_label": condition_label,
+                "comment": comment,
                 "audit_warehouses": audit_warehouses,
                 "audit_comment": audit_comment,
             }
