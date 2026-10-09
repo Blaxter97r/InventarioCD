@@ -422,6 +422,17 @@ def _combined_inventory_table(rows, styles):
             f"{escape(str(base[3] or '—'))}</b><br/>"
             f"{escape(str(base[4] or '—'))}"
         )
+        continuation_notes = []
+        if report_row.get("continuation_from_previous"):
+            continuation_notes.append("CONTINUACIÓN DE LA PÁGINA ANTERIOR")
+        if report_row.get("continues_next_page"):
+            continuation_notes.append("CONTINÚA EN LA PÁGINA SIGUIENTE")
+        if continuation_notes:
+            identity += (
+                "<br/><font color='#9F5A18'><b>"
+                + " · ".join(continuation_notes)
+                + "</b></font>"
+            )
         calculated_difference = report_row["calculated_difference"]
         difference_color = (
             "#9F3030" if calculated_difference < 0
@@ -458,7 +469,9 @@ def _combined_inventory_table(rows, styles):
                 "counted_quantity": None,
                 "is_blank": True,
             }
-            for _ in range(EXTRA_LOCATION_ROWS)
+            for _ in range(
+                report_row.get("extra_location_rows", EXTRA_LOCATION_ROWS)
+            )
         ]
         for detail in report_row["locations"] + report_row["external"] + manual_rows:
             current_row = len(data)
@@ -543,14 +556,96 @@ def _combined_inventory_table(rows, styles):
     return table
 
 
+def _split_oversized_inventory_row(
+    report_row, styles, available_width, available_height
+):
+    table = _combined_inventory_table([report_row], styles)
+    _, table_height = table.wrap(available_width, available_height)
+    if table_height <= available_height:
+        return [report_row]
+
+    details = [
+        *(dict(detail, _detail_group="locations") for detail in report_row["locations"]),
+        *(dict(detail, _detail_group="external") for detail in report_row["external"]),
+    ]
+    if not details:
+        return [report_row]
+
+    fragments = []
+    offset = 0
+    while offset < len(details):
+        remaining_count = len(details) - offset
+        low, high = 1, remaining_count
+        best_count = 0
+        while low <= high:
+            candidate_count = (low + high) // 2
+            is_final = candidate_count == remaining_count
+            candidate_details = details[offset:offset + candidate_count]
+            candidate = {
+                **report_row,
+                "locations": [
+                    {key: value for key, value in detail.items() if key != "_detail_group"}
+                    for detail in candidate_details
+                    if detail["_detail_group"] == "locations"
+                ],
+                "external": [
+                    {key: value for key, value in detail.items() if key != "_detail_group"}
+                    for detail in candidate_details
+                    if detail["_detail_group"] == "external"
+                ],
+                "continuation_from_previous": bool(fragments),
+                "continues_next_page": not is_final,
+                "extra_location_rows": EXTRA_LOCATION_ROWS if is_final else 0,
+            }
+            candidate_table = _combined_inventory_table([candidate], styles)
+            _, candidate_height = candidate_table.wrap(
+                available_width, available_height
+            )
+            if candidate_height <= available_height:
+                best_count = candidate_count
+                low = candidate_count + 1
+            else:
+                high = candidate_count - 1
+
+        # Incluso una sola fila puede exceder una página con dimensiones
+        # atípicas. En ese caso se conserva el encogimiento mínimo existente.
+        selected_count = best_count or 1
+        is_final = selected_count == remaining_count
+        selected_details = details[offset:offset + selected_count]
+        fragments.append({
+            **report_row,
+            "locations": [
+                {key: value for key, value in detail.items() if key != "_detail_group"}
+                for detail in selected_details
+                if detail["_detail_group"] == "locations"
+            ],
+            "external": [
+                {key: value for key, value in detail.items() if key != "_detail_group"}
+                for detail in selected_details
+                if detail["_detail_group"] == "external"
+            ],
+            "continuation_from_previous": bool(fragments),
+            "continues_next_page": not is_final,
+            "extra_location_rows": EXTRA_LOCATION_ROWS if is_final else 0,
+        })
+        offset += selected_count
+    return fragments
+
+
 def _paginated_inventory_rows(rows, styles, available_width, available_height):
     """Agrupa productos completos por página para no cortar un código."""
     if not rows:
         return [[]]
 
+    render_rows = []
+    for report_row in rows:
+        render_rows.extend(_split_oversized_inventory_row(
+            report_row, styles, available_width, available_height
+        ))
+
     pages = []
     current_page = []
-    for report_row in rows:
+    for report_row in render_rows:
         candidate_page = [*current_page, report_row]
         candidate_table = _combined_inventory_table(candidate_page, styles)
         _, candidate_height = candidate_table.wrap(available_width, available_height)

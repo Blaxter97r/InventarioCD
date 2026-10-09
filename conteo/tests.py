@@ -2169,6 +2169,64 @@ class DifferenceImportTests(TestCase):
             code = row["base"][3]
             self.assertEqual(sum(code in page_text for page_text in page_texts), 1)
 
+    def test_recount_pdf_splits_only_an_oversized_code_with_continuation_notes(self):
+        locations = [
+            {
+                "warehouse": "CENTRAL",
+                "type": "SECUNDARIO",
+                "location": f"A{index:03}I-B01",
+                "rge_quantity": Decimal("1"),
+                "counted_quantity": Decimal("1"),
+            }
+            for index in range(180)
+        ]
+        oversized_row = {
+            "base": ["1", "1", "25", "CODIGO-GIGANTE", "Producto con muchas ubicaciones"],
+            "last_count": Decimal("180"),
+            "stock": Decimal("180"),
+            "calculated_difference": Decimal("0"),
+            "scanned": [],
+            "rge": [],
+            "locations": locations,
+            "external": [],
+        }
+        styles = _report_styles()
+
+        pages = _paginated_inventory_rows(
+            [oversized_row],
+            styles,
+            A4[0] - 10 * mm,
+            A4[1] - 25 * mm,
+        )
+
+        fragments = [fragment for page in pages for fragment in page]
+        self.assertGreater(len(fragments), 1)
+        self.assertFalse(fragments[0].get("continuation_from_previous"))
+        self.assertTrue(fragments[0]["continues_next_page"])
+        self.assertTrue(fragments[-1]["continuation_from_previous"])
+        self.assertFalse(fragments[-1]["continues_next_page"])
+        self.assertEqual(fragments[0]["extra_location_rows"], 0)
+        self.assertEqual(fragments[-1]["extra_location_rows"], EXTRA_LOCATION_ROWS)
+        self.assertEqual(
+            [location["location"] for fragment in fragments for location in fragment["locations"]],
+            [location["location"] for location in locations],
+        )
+
+        load = SimpleNamespace(
+            linea=SimpleNamespace(nlinea="1"),
+            numero_reconteo=1,
+            archivo_as400=None,
+        )
+        with patch("conteo.recount_reports._product_rows", return_value=[oversized_row]):
+            report, missing_as400 = build_recount_pdf(load, "central")
+
+        self.assertFalse(missing_as400)
+        page_texts = [page.extract_text() or "" for page in PdfReader(BytesIO(report)).pages]
+        self.assertGreater(len(page_texts), 1)
+        self.assertTrue(all("CODIGO-GIGANTE" in page_text for page_text in page_texts))
+        self.assertIn("CONTINÚA EN LA PÁGINA SIGUIENTE", page_texts[0])
+        self.assertIn("CONTINUACIÓN DE LA PÁGINA ANTERIOR", page_texts[-1])
+
     def test_recount_warehouse_buttons_and_report_use_count_warehouse(self):
         Sublinea.objects.create(
             id_sublinea="SL02",
