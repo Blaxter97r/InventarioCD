@@ -237,15 +237,24 @@ def import_differences(uploaded_file, selected_line, user, as400_pdf=None):
                         f"Fila {row_number}: Ubicación {index} supera 100 caracteres."
                     )
 
+            ultimo_conteo = _decimal(
+                values["ultimo_conteo"], row_number, "Último Conteo"
+            )
+            existencia = _decimal(
+                values["existencia"], row_number, "Existencia"
+            )
+            # Se valida la columna recibida para conservar el contrato del
+            # archivo, pero el signo confiable siempre se calcula internamente.
+            _decimal(values["diferencia"], row_number, "Diferencia")
             parsed_rows.append(
                 {
                     "sublinea": sublinea,
                     "item": item,
                     "codigo": codigo,
                     "descripcion": descripcion,
-                    "ultimo_conteo": _decimal(values["ultimo_conteo"], row_number, "Último Conteo"),
-                    "existencia": _decimal(values["existencia"], row_number, "Existencia"),
-                    "diferencia": _decimal(values["diferencia"], row_number, "Diferencia"),
+                    "ultimo_conteo": ultimo_conteo,
+                    "existencia": existencia,
+                    "diferencia": ultimo_conteo - existencia,
                     **locations,
                     "fecha_generacion": _date(values["fecha_generacion"], row_number),
                     "hora_generacion": _time(values["hora_generacion"], row_number),

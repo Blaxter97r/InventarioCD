@@ -1296,7 +1296,7 @@ class DifferenceImportTests(TestCase):
         self.assertEqual(Diferencia.objects.count(), 2)
         first = Diferencia.objects.get(codigo="ABC-001")
         self.assertEqual(first.ubicacion_1, "A-01")
-        self.assertEqual(first.diferencia, -2)
+        self.assertEqual(first.diferencia, 2)
         page = self.client.get(reverse("conteo:differences_index"), {"linea": self.line.pk})
         self.assertEqual(page.status_code, 200)
         self.assertNotContains(page, "Detalle de diferencias")
@@ -1324,21 +1324,21 @@ class DifferenceImportTests(TestCase):
         codes = codes_response.json()["codes"]
         self.assertEqual(len(codes), 2)
         costs = {item["codigo"]: (item["costo"], item["costo_total"]) for item in codes}
-        self.assertEqual(costs["ABC-001"], ("12.35", "-24.69"))
+        self.assertEqual(costs["ABC-001"], ("12.35", "24.69"))
         self.assertEqual(costs["ABC-002"], (None, None))
         self.assertEqual(
             codes_response.json()["totales"],
-            {"faltante": "-24.69", "sobrante": "0.00", "diferencia_neta": "-24.69"},
+            {"faltante": "0.00", "sobrante": "24.69", "diferencia_neta": "24.69"},
         )
         first_code = next(item for item in codes if item["codigo"] == "ABC-001")
         second_code = next(item for item in codes if item["codigo"] == "ABC-002")
         self.assertEqual(
             (first_code["ultimo_conteo"], first_code["existencia"], first_code["diferencia"]),
-            ("10", "8", "-2"),
+            ("10", "8", "2"),
         )
         self.assertEqual(
             (second_code["ultimo_conteo"], second_code["existencia"], second_code["diferencia"]),
-            ("6", "7", "2"),
+            ("6", "7", "-2"),
         )
         CostoProducto.objects.create(
             carga=cost_load,
@@ -1348,8 +1348,28 @@ class DifferenceImportTests(TestCase):
         totals = self.client.get(reverse("conteo:pending_codes", args=[load.pk])).json()["totales"]
         self.assertEqual(
             totals,
-            {"faltante": "-24.69", "sobrante": "5.00", "diferencia_neta": "-19.69"},
+            {"faltante": "-5.00", "sobrante": "24.69", "diferencia_neta": "19.69"},
         )
+
+    def test_difference_model_always_uses_last_count_minus_stock(self):
+        load = CargaDiferencias.objects.create(
+            linea=self.line,
+            archivo_nombre="diferencias.xlsx",
+            numero_reconteo=1,
+            cargado_por=self.admin,
+        )
+        difference = Diferencia.objects.create(
+            carga=load,
+            sublinea="2",
+            codigo="FALTANTE-001",
+            ultimo_conteo=1,
+            existencia=2,
+            diferencia=1,
+            fecha_generacion=date(2026, 8, 8),
+            hora_generacion=time(14, 30),
+        )
+
+        self.assertEqual(difference.diferencia, Decimal("-1"))
 
     def test_recount_analysis_applies_warehouse_matrix_and_audit_rule(self):
         ransa_line = Linea.objects.create(
@@ -1818,14 +1838,20 @@ class DifferenceImportTests(TestCase):
         table = _combined_inventory_table(rows, _report_styles())
         self.assertEqual(EXTRA_LOCATION_ROWS, 1)
         self.assertEqual(table._cellvalues[0][-1].getPlainText(), "Firma auditor")
-        first_product_row_count = (
+        abc_product_row_count = (
             len(abc_row["locations"])
             + len(abc_row["external"])
             + EXTRA_LOCATION_ROWS
         )
-        first_product_rows = table._cellvalues[3:3 + first_product_row_count]
+        abc_product_offset = 3 + sum(
+            1 + len(row["locations"]) + len(row["external"]) + EXTRA_LOCATION_ROWS
+            for row in rows[:rows.index(abc_row)]
+        )
+        abc_product_rows = table._cellvalues[
+            abc_product_offset:abc_product_offset + abc_product_row_count
+        ]
         self.assertEqual(
-            [row[5].getPlainText() for row in first_product_rows[-4:]],
+            [row[5].getPlainText() for row in abc_product_rows[-4:]],
             ["LOURDES", "MIRAMAR", "AGDOSA", ""],
         )
         response = self.client.get(
@@ -1850,7 +1876,70 @@ class DifferenceImportTests(TestCase):
         self.assertNotIn("R-01", pdf_text)
         self.assertNotIn("NO-ELEGIDO", pdf_text)
 
-    def test_recount_pdf_orders_surplus_codes_before_other_differences(self):
+    def test_recount_pdf_orders_secondary_only_then_primary_codes_by_item(self):
+        load = CargaDiferencias.objects.create(
+            linea=self.line,
+            archivo_nombre="diferencias.xlsx",
+            numero_reconteo=1,
+            estado=CargaDiferencias.Estado.RECONTEO,
+            cargado_por=self.admin,
+            seleccionado_por=self.admin,
+        )
+        count_load = CargaConteoInventario.objects.create(
+            archivo_nombre="conteo.xlsx", cargado_por=self.admin
+        )
+        for location, location_type in (
+            ("C-P01", "Primario"),
+            ("C-S01", "Secundario"),
+            ("C-S02", "Secundario"),
+        ):
+            Ubicacion.objects.create(
+                ubicacion=location,
+                bodega="CENTRAL",
+                sector="Piso",
+                tipo=location_type,
+            )
+        products = (
+            ("SECUNDARIO-ITEM-10", "10", ("C-S01",)),
+            ("PRIMARIO-ITEM-11", "11", ("C-P01",)),
+            ("SECUNDARIO-ITEM-2", "2", ("C-S02",)),
+            ("PRIMARIO-Y-SECUNDARIO-ITEM-3", "3", ("C-P01", "C-S01")),
+        )
+        for code, item, locations in products:
+            Diferencia.objects.create(
+                carga=load,
+                sublinea="01",
+                item=item,
+                codigo=code,
+                ultimo_conteo=5,
+                existencia=4,
+                diferencia=1,
+                fecha_generacion=date(2026, 8, 17),
+                hora_generacion=time(9, 30),
+                seleccionada=True,
+            )
+            for location in locations:
+                DetalleConteoInventario.objects.create(
+                    carga=count_load,
+                    bodega="CENTRAL",
+                    ubicacion=location,
+                    codigo=code,
+                    cantidad=5,
+                )
+
+        rows = _product_rows(load, "central")
+
+        self.assertEqual(
+            [(row["base"][3], row["base"][2]) for row in rows],
+            [
+                ("SECUNDARIO-ITEM-2", "2"),
+                ("SECUNDARIO-ITEM-10", "10"),
+                ("PRIMARIO-Y-SECUNDARIO-ITEM-3", "3"),
+                ("PRIMARIO-ITEM-11", "11"),
+            ],
+        )
+
+    def test_recount_pdf_item_order_supports_alphanumeric_correlatives(self):
         load = CargaDiferencias.objects.create(
             linea=self.line,
             archivo_nombre="diferencias.xlsx",
@@ -1863,20 +1952,22 @@ class DifferenceImportTests(TestCase):
             archivo_nombre="conteo.xlsx", cargado_por=self.admin
         )
         Ubicacion.objects.create(
-            ubicacion="C-01", bodega="CENTRAL", sector="Piso", tipo="Primario"
+            ubicacion="C-P01", bodega="CENTRAL", sector="Piso", tipo="Primario"
         )
-        for code, subline, last_count, stock in (
-            ("FALTANTE-PRIMERO-ALFABETICAMENTE", "01", 2, 5),
-            ("EXCEDENTE-B", "03", 8, 5),
-            ("EXCEDENTE-A", "02", 7, 5),
+        for code, item in (
+            ("CODIGO-A10", "A10"),
+            ("CODIGO-A2", "A2"),
+            ("CODIGO-20", "20"),
+            ("CODIGO-3", "3"),
         ):
             Diferencia.objects.create(
                 carga=load,
-                sublinea=subline,
+                sublinea="01",
+                item=item,
                 codigo=code,
-                ultimo_conteo=last_count,
-                existencia=stock,
-                diferencia=last_count - stock,
+                ultimo_conteo=5,
+                existencia=4,
+                diferencia=1,
                 fecha_generacion=date(2026, 8, 17),
                 hora_generacion=time(9, 30),
                 seleccionada=True,
@@ -1884,16 +1975,16 @@ class DifferenceImportTests(TestCase):
             DetalleConteoInventario.objects.create(
                 carga=count_load,
                 bodega="CENTRAL",
-                ubicacion="C-01",
+                ubicacion="C-P01",
                 codigo=code,
-                cantidad=last_count,
+                cantidad=5,
             )
 
         rows = _product_rows(load, "central")
 
         self.assertEqual(
-            [row["base"][3] for row in rows],
-            ["EXCEDENTE-A", "EXCEDENTE-B", "FALTANTE-PRIMERO-ALFABETICAMENTE"],
+            [row["base"][2] for row in rows],
+            ["3", "20", "A2", "A10"],
         )
 
     def test_recount_pdf_location_decision_matrix(self):
@@ -2744,12 +2835,12 @@ class DifferenceImportTests(TestCase):
         Diferencia.objects.bulk_create([
             Diferencia(
                 carga=latest_load, sublinea="2", codigo="ABC-001",
-                ultimo_conteo=10, existencia=8, diferencia=-2,
+                ultimo_conteo=10, existencia=8, diferencia=2,
                 fecha_generacion=date(2026, 8, 8), hora_generacion=time(9, 0),
             ),
             Diferencia(
                 carga=latest_load, sublinea="2", codigo="ABC-002",
-                ultimo_conteo=5.5, existencia=7, diferencia=1.5,
+                ultimo_conteo=5.5, existencia=7, diferencia=-1.5,
                 fecha_generacion=date(2026, 8, 8), hora_generacion=time(9, 1),
             ),
         ])
@@ -2758,15 +2849,15 @@ class DifferenceImportTests(TestCase):
 
         item = response.context["recount_summary"][0]
         self.assertEqual(item["load"], latest_load)
-        self.assertEqual(item["shortage_total"], "-$24.69")
-        self.assertEqual(item["overage_total"], "$5.00")
-        self.assertEqual(item["net_total"], "-$19.69")
-        self.assertTrue(item["net_is_negative"])
+        self.assertEqual(item["shortage_total"], "-$5.00")
+        self.assertEqual(item["overage_total"], "$24.69")
+        self.assertEqual(item["net_total"], "$19.69")
+        self.assertFalse(item["net_is_negative"])
         for heading in ("Faltante", "Sobrante", "Neto"):
             self.assertContains(response, f"<span>{heading}</span>")
-        self.assertContains(response, "-$24.69")
-        self.assertContains(response, "$5.00")
-        self.assertContains(response, "-$19.69")
+        self.assertContains(response, "-$5.00")
+        self.assertContains(response, "$24.69")
+        self.assertContains(response, "$19.69")
 
     def test_line_summary_excludes_retired_catalog_lines(self):
         retired = Linea.objects.create(

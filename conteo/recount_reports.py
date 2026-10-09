@@ -3,6 +3,7 @@ from decimal import Decimal
 from html import escape
 from io import BytesIO
 import logging
+import re
 
 from django.db.models.functions import Trim, Upper
 from reportlab.lib import colors
@@ -49,6 +50,31 @@ EXTRA_LOCATION_ROWS = 1
 
 def _normalize(value):
     return str(value or "").strip().upper()
+
+
+def _item_sort_key(value):
+    text = str(value or "").strip().upper()
+    if not text:
+        return (1, ())
+    natural_parts = tuple(
+        (0, int(part)) if part.isdigit() else (1, part)
+        for part in re.split(r"(\d+)", text)
+        if part
+    )
+    return (0, natural_parts)
+
+
+def _product_sort_key(row):
+    location_types = {location["type"] for location in row["locations"]}
+    only_secondary = (
+        "SECUNDARIO" in location_types
+        and "PRIMARIO" not in location_types
+    )
+    return (
+        0 if only_secondary else 1,
+        _item_sort_key(row["base"][2]),
+        _normalize(row["base"][3]),
+    )
 
 
 def _warehouse_key(value):
@@ -342,13 +368,7 @@ def _product_rows(load, warehouse_key):
                 ],
             }
         )
-    rows.sort(
-        key=lambda row: (
-            0 if row["calculated_difference"] > 0 else 1,
-            str(row["base"][1] or ""),
-            str(row["base"][3] or ""),
-        )
-    )
+    rows.sort(key=_product_sort_key)
     return rows
 
 
