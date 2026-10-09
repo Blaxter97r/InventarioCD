@@ -3,7 +3,7 @@ services:
     name: inventario-2026
     runtime: python
     buildCommand: pip install -r requirements.txt && python manage.py collectstatic --noinput
-    startCommand: python manage.py migrate --noinput && gunicorn CDINVENTARIO.wsgi:application --bind 0.0.0.0:$PORT --workers 2 --timeout 300
+    startCommand: python manage.py migrate --noinput && gunicorn CDINVENTARIO.wsgi:application --bind 0.0.0.0:$PORT --workers 2 --timeout 500
     healthCheckPath: /login/
     disk:
       name: inventario-media
@@ -23,4 +23,3 @@ services:
 
 databases:
   - name: inventario-2026-db
-    plan: free
