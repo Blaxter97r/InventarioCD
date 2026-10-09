@@ -553,7 +553,11 @@ def _draw_page_footer(canvas, document):
     canvas.setFont("Helvetica", 7)
     canvas.drawString(document.leftMargin, 8 * mm, "Inventario 2026")
     canvas.drawCentredString(page_width / 2, 8 * mm, document.recount_label)
-    canvas.drawRightString(page_width - document.rightMargin, 8 * mm, f"Página {canvas.getPageNumber()}")
+    canvas.drawRightString(
+        page_width - document.rightMargin,
+        8 * mm,
+        f"Página {canvas.getPageNumber()}/{document.recount_total_pages}",
+    )
     canvas.restoreState()
 
 
@@ -585,6 +589,7 @@ def build_recount_pdf(load, warehouse_key):
         f"{WAREHOUSES[warehouse_key]}"
     )
     page_rows = _paginated_inventory_rows(rows, styles, document.width, document.height)
+    document.recount_total_pages = len(page_rows)
     story = []
     for page_index, rows_for_page in enumerate(page_rows):
         if page_index:

@@ -2008,6 +2008,9 @@ class DifferenceImportTests(TestCase):
         self.assertFalse(missing_as400)
         page_texts = [page.extract_text() or "" for page in PdfReader(BytesIO(report)).pages]
         self.assertGreater(len(page_texts), 1)
+        total_pages = len(page_texts)
+        for page_number, page_text in enumerate(page_texts, start=1):
+            self.assertIn(f"Página {page_number}/{total_pages}", page_text)
         for row in rows:
             code = row["base"][3]
             self.assertEqual(sum(code in page_text for page_text in page_texts), 1)
