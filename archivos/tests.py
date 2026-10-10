@@ -570,7 +570,10 @@ class InventoryCountImportTests(TestCase):
             response["Content-Disposition"],
             'attachment; filename="conteo_inventario_vigente.xlsx"',
         )
-        downloaded = load_workbook(BytesIO(response.content), data_only=False)
+        self.assertTrue(response.streaming)
+        downloaded = load_workbook(
+            BytesIO(b"".join(response.streaming_content)), data_only=False
+        )
         sheet = downloaded["Conteo"]
         self.assertEqual(
             list(sheet.values),

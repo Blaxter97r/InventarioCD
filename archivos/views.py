@@ -1,5 +1,6 @@
 from functools import wraps
 from io import BytesIO
+from tempfile import TemporaryFile
 from urllib.parse import urlsplit
 from decimal import Decimal, InvalidOperation
 
@@ -20,11 +21,12 @@ from django.db.models import (
     When,
 )
 from django.db.models.functions import Cast, Lower, Upper
-from django.http import Http404, HttpResponse
+from django.http import FileResponse, Http404, HttpResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 from django.utils.http import url_has_allowed_host_and_scheme
 from openpyxl import Workbook
+from openpyxl.cell import WriteOnlyCell
 from openpyxl.styles import Alignment, Font, PatternFill
 
 from .forms import BECountUploadForm, CostBaseUploadForm, ExcelUploadForm, InventoryCountLocationForm, InventoryCountQuantityForm, InventoryCountUploadForm, RGEUploadForm
@@ -413,40 +415,52 @@ def inventory_count_download_view(request):
     if current_load is None:
         raise Http404("No hay un conteo vigente para descargar.")
 
-    workbook = Workbook()
-    sheet = workbook.active
-    sheet.title = "Conteo"
-    sheet.append(("Bodega", "Ubicacion", "Codigo", "Cantidad"))
+    # A normal openpyxl workbook keeps every cell in memory.  The inventory can
+    # contain hundreds of thousands of rows, so build it in write-only mode and
+    # let Django stream the finished file from a temporary file instead.
+    workbook = Workbook(write_only=True)
+    sheet = workbook.create_sheet("Conteo")
     sheet.freeze_panes = "A2"
-    for cell in sheet[1]:
+    for column, width in zip(("A", "B", "C", "D"), (24, 24, 24, 16)):
+        sheet.column_dimensions[column].width = width
+    header = [
+        WriteOnlyCell(sheet, value=value)
+        for value in ("Bodega", "Ubicacion", "Codigo", "Cantidad")
+    ]
+    for cell in header:
         cell.font = Font(bold=True, color="FFFFFF")
         cell.fill = PatternFill("solid", fgColor="087F76")
         cell.alignment = Alignment(horizontal="center")
+    sheet.append(header)
 
     details = current_load.detalles.order_by(
         "bodega", "ubicacion", "codigo", "pk"
     ).values_list("bodega", "ubicacion", "codigo", "cantidad")
+    row_count = 1
     for bodega, ubicacion, codigo, cantidad in details.iterator(chunk_size=2000):
-        sheet.append((bodega, ubicacion, codigo, cantidad))
-        for cell in sheet[sheet.max_row][:3]:
+        row = []
+        for value in (bodega, ubicacion, codigo):
+            cell = WriteOnlyCell(sheet, value=value)
             cell.data_type = "s"
-        sheet.cell(row=sheet.max_row, column=4).number_format = "0.####"
+            row.append(cell)
+        quantity_cell = WriteOnlyCell(sheet, value=cantidad)
+        quantity_cell.number_format = "0.####"
+        row.append(quantity_cell)
+        sheet.append(row)
+        row_count += 1
 
-    sheet.auto_filter.ref = f"A1:D{sheet.max_row}"
-    for column, width in zip(("A", "B", "C", "D"), (24, 24, 24, 16)):
-        sheet.column_dimensions[column].width = width
+    sheet.auto_filter.ref = f"A1:D{row_count}"
 
-    output = BytesIO()
+    output = TemporaryFile()
     workbook.save(output)
     workbook.close()
-    response = HttpResponse(
-        output.getvalue(),
+    output.seek(0)
+    return FileResponse(
+        output,
+        as_attachment=True,
+        filename="conteo_inventario_vigente.xlsx",
         content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     )
-    response["Content-Disposition"] = (
-        'attachment; filename="conteo_inventario_vigente.xlsx"'
-    )
-    return response
 
 
 @login_required
