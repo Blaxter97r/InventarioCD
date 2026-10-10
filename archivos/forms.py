@@ -37,11 +37,11 @@ class InventoryCountUploadForm(ExcelUploadForm):
 class InventoryCountQuantityForm(forms.Form):
     cantidad = forms.IntegerField(
         label="Cantidad contada",
-        min_value=0,
+        min_value=-99_999_999_999_999,
         max_value=99_999_999_999_999,
         error_messages={
             "invalid": "Ingresa una cantidad entera válida.",
-            "min_value": "La cantidad no puede ser negativa.",
+            "min_value": "La cantidad no puede ser menor a -99,999,999,999,999.",
             "max_value": "La cantidad no puede superar 99,999,999,999,999.",
         },
     )

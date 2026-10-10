@@ -84,7 +84,7 @@
           <label><span>Código seleccionado</span><input type="text" name="codigo" maxlength="100" value="{{ new_location_code }}" autocomplete="off" required></label>
           <label><span>Bodega</span><select name="bodega" required><option value="CENTRAL">CENTRAL</option><option value="RANSA">RANSA</option><option value="PEDREGAL">PEDREGAL</option></select></label>
           <label><span>Nueva ubicación</span><input type="text" name="ubicacion" maxlength="100" autocomplete="off" required></label>
-          <label><span>Cantidad entera</span><input type="number" name="cantidad" inputmode="numeric" min="0" max="99999999999999" step="1" autocomplete="off" required></label>
+          <label><span>Cantidad entera</span><input type="number" name="cantidad" inputmode="numeric" min="-99999999999999" max="99999999999999" step="1" autocomplete="off" required></label>
           <button class="inventory-save-button" type="submit">Agregar ubicación</button>
         </form>
         <p>Se admite un código del conteo vigente o uno seleccionado por Gerencia, aunque todavía no haya sido contado.</p>
@@ -103,7 +103,7 @@
                 {% if edit_mode %}
                   <input type="hidden" name="detalle_ids" value="{{ item.pk }}">
                   <input type="hidden" name="original_{{ item.pk }}" value="{{ item.cantidad|stringformat:'s' }}">
-                  <input class="inventory-bulk-input" type="number" inputmode="numeric" min="0" max="99999999999999" step="1" name="cantidad_{{ item.pk }}" value="{{ item.cantidad|floatformat:'-4' }}" autocomplete="off" required aria-label="Cantidad contada de {{ item.codigo }} en {{ item.ubicacion }}" {% if forloop.first and not query %}autofocus{% endif %}>
+                  <input class="inventory-bulk-input" type="number" inputmode="numeric" min="-99999999999999" max="99999999999999" step="1" name="cantidad_{{ item.pk }}" value="{{ item.cantidad|floatformat:'-4' }}" autocomplete="off" required aria-label="Cantidad contada de {{ item.codigo }} en {{ item.ubicacion }}" {% if forloop.first and not query %}autofocus{% endif %}>
                 {% else %}
                   <span class="inventory-quantity">{{ item.cantidad|floatformat:"-4" }}</span>
                 {% endif %}

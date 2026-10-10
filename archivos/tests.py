@@ -605,7 +605,7 @@ class InventoryCountQuantityEditTests(TestCase):
         )
 
     def test_invalid_and_stale_quantities_are_not_saved(self):
-        for quantity in ("-1", "1.5", "8,5", "hola", "100000000000000"):
+        for quantity in ("-100000000000000", "1.5", "8,5", "hola", "100000000000000"):
             self.post_quantity(quantity)
             self.detail.refresh_from_db()
             self.assertEqual(self.detail.cantidad, Decimal("5"))
@@ -613,6 +613,23 @@ class InventoryCountQuantityEditTests(TestCase):
         self.detail.refresh_from_db()
         self.assertEqual(self.detail.cantidad, Decimal("5"))
         self.assertFalse(AjusteCantidadConteoInventario.objects.exists())
+
+    def test_negative_quantity_is_saved_and_used_by_recount_reports(self):
+        from conteo.recount_reports import _group_scanned_locations
+
+        response = self.post_quantity("-3")
+
+        self.assertRedirects(
+            response,
+            reverse("archivos:inventory_count_index") + "?q=ABC-001",
+        )
+        self.detail.refresh_from_db()
+        self.assertEqual(self.detail.cantidad, Decimal("-3"))
+        adjustment = AjusteCantidadConteoInventario.objects.get()
+        self.assertEqual(adjustment.cantidad_anterior, Decimal("5"))
+        self.assertEqual(adjustment.cantidad_nueva, Decimal("-3"))
+        grouped, _ = _group_scanned_locations({"ABC-001"}, "central")
+        self.assertEqual(grouped["ABC-001"]["A-01"], Decimal("-3"))
 
     def test_historical_count_is_read_only(self):
         newer = CargaConteoInventario.objects.create(
@@ -651,7 +668,7 @@ class InventoryCountQuantityEditTests(TestCase):
         self.assertContains(page, f'name="cantidad_{self.detail.pk}"')
         self.assertContains(page, f'name="cantidad_{second.pk}"')
         self.assertNotContains(page, f'name="cantidad_{other.pk}"')
-        self.assertContains(page, 'type="number" inputmode="numeric" min="0" max="99999999999999" step="1"')
+        self.assertContains(page, 'type="number" inputmode="numeric" min="-99999999999999" max="99999999999999" step="1"')
         self.assertNotContains(page, 'inputmode="decimal"')
 
         response = self.client.post(reverse("archivos:inventory_count_bulk_quantity"), {
@@ -659,7 +676,7 @@ class InventoryCountQuantityEditTests(TestCase):
             f"original_{self.detail.pk}": "5.0000",
             f"cantidad_{self.detail.pk}": "8",
             f"original_{second.pk}": "3.0000",
-            f"cantidad_{second.pk}": "1",
+            f"cantidad_{second.pk}": "-1",
             "return_to": index_url + "?editar=1&q=ABC-001",
         })
         self.assertRedirects(response, index_url + "?editar=1&q=ABC-001")
@@ -667,7 +684,7 @@ class InventoryCountQuantityEditTests(TestCase):
         second.refresh_from_db()
         other.refresh_from_db()
         self.assertEqual(self.detail.cantidad, Decimal("8"))
-        self.assertEqual(second.cantidad, Decimal("1"))
+        self.assertEqual(second.cantidad, Decimal("-1"))
         self.assertEqual(other.cantidad, Decimal("4"))
         self.assertEqual(AjusteCantidadConteoInventario.objects.count(), 2)
 
@@ -778,7 +795,7 @@ class InventoryCountQuantityEditTests(TestCase):
             f"original_{self.detail.pk}": "5.0000",
             f"cantidad_{self.detail.pk}": "8",
             f"original_{second.pk}": "3.0000",
-            f"cantidad_{second.pk}": "-2",
+            f"cantidad_{second.pk}": "-2.5",
         })
         self.assertRedirects(response, reverse("archivos:inventory_count_index"))
         self.detail.refresh_from_db()
@@ -926,7 +943,7 @@ class InventoryCountQuantityEditTests(TestCase):
         self.assertContains(page, 'value="ABC-001"')
         for warehouse in ("CENTRAL", "RANSA", "PEDREGAL"):
             self.assertContains(page, f'<option value="{warehouse}">{warehouse}</option>')
-        self.assertContains(page, 'name="cantidad" inputmode="numeric" min="0" max="99999999999999" step="1"')
+        self.assertContains(page, 'name="cantidad" inputmode="numeric" min="-99999999999999" max="99999999999999" step="1"')
 
     def test_editor_can_add_location_and_delete_its_row(self):
         editor = get_user_model().objects.create_user(username="editor-filas", password="test-2026")
