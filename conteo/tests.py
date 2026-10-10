@@ -2625,7 +2625,7 @@ class DifferenceImportTests(TestCase):
             else:
                 self.assertNotIn("SOLO-CENTRAL", pdf_text)
 
-    def test_selected_code_without_source_warehouse_is_visible_for_review(self):
+    def test_selected_code_without_rge_or_count_gets_blank_central_pdf_row(self):
         load = CargaDiferencias.objects.create(
             linea=self.line,
             archivo_nombre="linea_1.xlsx",
@@ -2649,13 +2649,36 @@ class DifferenceImportTests(TestCase):
 
         page = self.client.get(reverse("conteo:recounts"))
         recount = page.context["recounts"][0]
-        self.assertEqual(recount.unclassified_codes, ["L4"])
+        self.assertEqual(recount.missing_source_codes, ["L4"])
+        self.assertEqual(recount.unclassified_codes, [])
         self.assertEqual(
             {option["key"]: option["count"] for option in recount.warehouse_options},
-            {"central": 0, "ransa": 0, "pedregal": 0},
+            {"central": 1, "ransa": 0, "pedregal": 0},
         )
-        self.assertContains(page, "1 sin bodega")
-        self.assertContains(page, "Sin bodega asignada:")
+        self.assertContains(page, "1 sin RGE/conteo")
+        self.assertContains(page, "Sin RGE ni conteo asignado:")
+
+        central_rows = _product_rows(load, "central")
+        self.assertEqual(len(central_rows), 1)
+        self.assertEqual(central_rows[0]["base"][3], "L4")
+        self.assertEqual(
+            central_rows[0]["source_note"],
+            "NO HAY RGE, NI CONTEO ASIGNADO",
+        )
+        self.assertTrue(central_rows[0]["locations"][0]["is_missing_source"])
+        self.assertEqual(_product_rows(load, "ransa"), [])
+        self.assertEqual(_product_rows(load, "pedregal"), [])
+
+        response = self.client.get(
+            reverse("conteo:recount_warehouse_report", args=[load.pk, "central"])
+        )
+        self.assertEqual(response.status_code, 200)
+        pdf_text = "\n".join(
+            pdf_page.extract_text()
+            for pdf_page in PdfReader(BytesIO(response.content)).pages
+        )
+        self.assertIn("L4", pdf_text)
+        self.assertIn("NO HAY RGE, NI CONTEO ASIGNADO", pdf_text)
 
     def test_file_line_must_match_selected_line(self):
         workbook = make_difference_workbook(

@@ -112,8 +112,9 @@ def attach_warehouse_options(recounts):
     }
     all_codes = set().union(*selected_by_load.values()) if selected_by_load else set()
     location_catalog = _location_catalog()
-    scanned_by_warehouse, _ = _group_all_scanned_locations(all_codes)
+    scanned_by_warehouse, counted_codes = _group_all_scanned_locations(all_codes)
     rge_by_warehouse = _rge_locations_by_warehouse(all_codes, location_catalog)
+    missing_source_codes = all_codes - counted_codes - _rge_codes(all_codes)
     warehouses_by_code = {
         code: {
             warehouse
@@ -135,12 +136,21 @@ def attach_warehouse_options(recounts):
             {
                 "key": key,
                 "label": label,
-                "count": sum(key in warehouses_by_code[code] for code in selected_codes),
+                "count": sum(
+                    key in warehouses_by_code[code]
+                    or (key == "central" and code in missing_source_codes)
+                    for code in selected_codes
+                ),
             }
             for key, label in WAREHOUSES.items()
         ]
+        load.missing_source_codes = sorted(
+            code for code in selected_codes if code in missing_source_codes
+        )
         load.unclassified_codes = sorted(
-            code for code in selected_codes if not warehouses_by_code[code]
+            code
+            for code in selected_codes
+            if not warehouses_by_code[code] and code not in missing_source_codes
         )
 
 
@@ -205,6 +215,23 @@ def _rge_locations_by_warehouse(codes, location_catalog=None):
         elif quantity is not None:
             locations[normalized_location] = previous + quantity
     return grouped
+
+
+def _rge_codes(codes):
+    """Devuelve los códigos presentes en el RGE, aunque su ubicación no tenga bodega."""
+    current_rge = CargaRGE.objects.first()
+    if not current_rge or not codes:
+        return set()
+    return {
+        _normalize(code)
+        for code in (
+            DetalleRGE.objects.filter(carga=current_rge)
+            .annotate(normalized_code=Upper("codigo"))
+            .filter(normalized_code__in=codes)
+            .values_list("codigo", flat=True)
+            .distinct()
+        )
+    }
 
 
 def _external_counts(codes):
@@ -304,9 +331,10 @@ def _product_rows(load, warehouse_key):
         load.diferencias.filter(seleccionada=True).order_by("sublinea", "codigo", "pk")
     )
     all_codes = {_normalize(item.codigo) for item in selected}
-    scanned_by_warehouse, _ = _group_all_scanned_locations(all_codes)
+    scanned_by_warehouse, counted_codes = _group_all_scanned_locations(all_codes)
     location_catalog = _location_catalog()
     rge_by_warehouse = _rge_locations_by_warehouse(all_codes, location_catalog)
+    missing_source_codes = all_codes - counted_codes - _rge_codes(all_codes)
     scanned = scanned_by_warehouse[warehouse_key]
     rge = rge_by_warehouse[warehouse_key]
     external_counts = _external_counts(all_codes)
@@ -323,6 +351,10 @@ def _product_rows(load, warehouse_key):
     selected = [
         item for item in selected
         if pdf_locations_by_code[_normalize(item.codigo)]
+        or (
+            warehouse_key == "central"
+            and _normalize(item.codigo) in missing_source_codes
+        )
     ]
     subline_descriptions = {}
     for subline in Sublinea.objects.filter(linea=load.linea):
@@ -332,12 +364,22 @@ def _product_rows(load, warehouse_key):
     rows = []
     for difference in selected:
         code = _normalize(difference.codigo)
+        missing_sources = code in missing_source_codes
         requested_counted_locations = scanned.get(code)
         if requested_counted_locations:
             counted = sorted(requested_counted_locations.items())
         else:
             counted = [(location, Decimal(0)) for location in sorted(rge[code])]
         combined_locations = pdf_locations_by_code[code]
+        if missing_sources:
+            combined_locations = [{
+                "warehouse": "",
+                "type": "",
+                "location": "",
+                "rge_quantity": None,
+                "counted_quantity": None,
+                "is_missing_source": True,
+            }]
         rows.append(
             {
                 "base": [
@@ -354,7 +396,10 @@ def _product_rows(load, warehouse_key):
                 "scanned": counted,
                 "rge": sorted(rge.get(code, {}).items()),
                 "locations": combined_locations,
-                "external": [
+                "source_note": (
+                    "NO HAY RGE, NI CONTEO ASIGNADO" if missing_sources else ""
+                ),
+                "external": [] if missing_sources else [
                     {
                         "warehouse": external_warehouse,
                         "type": "",
@@ -433,6 +478,12 @@ def _combined_inventory_table(rows, styles):
                 + " · ".join(continuation_notes)
                 + "</b></font>"
             )
+        if report_row.get("source_note"):
+            identity += (
+                "<br/><font color='#9F3030'><b>"
+                + escape(report_row["source_note"])
+                + "</b></font>"
+            )
         calculated_difference = report_row["calculated_difference"]
         difference_color = (
             "#9F3030" if calculated_difference < 0
@@ -485,11 +536,11 @@ def _combined_inventory_table(rows, styles):
                 Paragraph(escape(detail["type"]), styles["cell_center"]),
                 Paragraph(escape(detail["location"]), styles["cell"]),
                 Paragraph(
-                    "" if detail.get("is_external") or detail.get("is_blank") else escape(_quantity_text(detail["rge_quantity"])),
+                    "" if detail.get("is_external") or detail.get("is_blank") or detail.get("is_missing_source") else escape(_quantity_text(detail["rge_quantity"])),
                     styles["cell_right"],
                 ),
                 Paragraph(
-                    "" if detail.get("is_blank") else escape(_quantity_text(detail["counted_quantity"])),
+                    "" if detail.get("is_blank") or detail.get("is_missing_source") else escape(_quantity_text(detail["counted_quantity"])),
                     styles["cell_right"],
                 ),
                 "",

@@ -44,6 +44,7 @@
                   {% endif %}
                 </div>
               {% endfor %}
+              {% if load.missing_source_codes %}<span class="recount-unclassified-count" title="Estos códigos se incluirán con un cuadro vacío en el PDF de Bodega Central">{{ load.missing_source_codes|length }} sin RGE/conteo</span>{% endif %}
               {% if load.unclassified_codes %}<span class="recount-unclassified-count" title="Abre Ver códigos para revisar los que no tienen bodega">{{ load.unclassified_codes|length }} sin bodega</span>{% endif %}
             </div>
             <details class="recount-details"><summary>Ver códigos</summary></details>
@@ -63,6 +64,9 @@
             </details>
           {% endif %}
           <div class="recount-code-panel">
+            {% if load.missing_source_codes %}
+              <p class="recount-unclassified"><strong>Sin RGE ni conteo asignado:</strong> {{ load.missing_source_codes|join:", " }}. Se incluirán con un cuadro vacío en el PDF de Bodega Central.</p>
+            {% endif %}
             {% if load.unclassified_codes %}
               <p class="recount-unclassified"><strong>Sin bodega asignada:</strong> {{ load.unclassified_codes|join:", " }}. Revisa si estos códigos aparecen en el archivo de conteo cargado; si no aparecen, verifica su ubicación en el RGE y en el mapa.</p>
             {% endif %}
