@@ -149,11 +149,15 @@
       (() => {
         const form = document.getElementById('inventory-bulk-edit');
         const fields = [...form.querySelectorAll('.inventory-bulk-input')];
+        const initialValues = new Map(fields.map(field => [field, field.value]));
         let saving = false;
-        const hasChanges = () => fields.some(field => field.value !== field.defaultValue);
-        fields.forEach(field => field.addEventListener('input', () => {
-          field.classList.toggle('is-changed', field.value !== field.defaultValue);
-        }));
+        const fieldHasChanges = field => field.value !== initialValues.get(field);
+        const hasChanges = () => fields.some(fieldHasChanges);
+        fields.forEach(field => {
+          const markChange = () => field.classList.toggle('is-changed', fieldHasChanges(field));
+          field.addEventListener('input', markChange);
+          field.addEventListener('change', markChange);
+        });
         form.addEventListener('submit', () => { saving = true; });
         window.addEventListener('beforeunload', event => {
           if (!saving && hasChanges()) {

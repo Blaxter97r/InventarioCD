@@ -736,6 +736,8 @@ class InventoryCountQuantityEditTests(TestCase):
         self.assertNotContains(page, f'name="cantidad_{other.pk}"')
         self.assertContains(page, 'type="number" inputmode="numeric" min="-99999999999999" max="99999999999999" step="1"')
         self.assertNotContains(page, 'inputmode="decimal"')
+        self.assertContains(page, "const initialValues = new Map")
+        self.assertNotContains(page, "field.value !== field.defaultValue")
 
         response = self.client.post(reverse("archivos:inventory_count_bulk_quantity"), {
             "detalle_ids": [self.detail.pk, second.pk],
