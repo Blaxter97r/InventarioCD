@@ -29,7 +29,7 @@ from openpyxl import Workbook
 from openpyxl.cell import WriteOnlyCell
 from openpyxl.styles import Alignment, Font, PatternFill
 
-from .forms import BECountUploadForm, CostBaseUploadForm, ExcelUploadForm, InventoryCountLocationForm, InventoryCountQuantityForm, InventoryCountUploadForm, RGEUploadForm
+from .forms import BECountUploadForm, CostBaseUploadForm, ExcelUploadForm, InventoryCountDetailForm, InventoryCountLocationForm, InventoryCountQuantityForm, InventoryCountUploadForm, RGEUploadForm
 from .models import (
     AjusteCantidadConteoInventario,
     CargaBaseCosto,
@@ -576,6 +576,10 @@ def inventory_count_location_view(request):
             detalle=detail,
             cantidad_anterior=0,
             cantidad_nueva=quantity,
+            bodega_anterior="",
+            bodega_nueva=warehouse,
+            ubicacion_anterior="",
+            ubicacion_nueva=location,
             modificado_por=request.user,
         )
         latest_load.total_registros = latest_load.detalles.count()
@@ -632,34 +636,124 @@ def inventory_count_bulk_quantity_view(request):
                 messages.error(request, "Una cantidad cambió desde que abriste la página. Actualiza antes de guardar.")
                 return redirect(return_to)
 
+            original_warehouse = request.POST.get(
+                f"original_bodega_{detail.pk}", detail.bodega
+            )
+            original_location = request.POST.get(
+                f"original_ubicacion_{detail.pk}", detail.ubicacion
+            )
+            if (
+                original_warehouse != detail.bodega
+                or original_location != detail.ubicacion
+            ):
+                messages.error(
+                    request,
+                    "Una bodega o ubicación cambió desde que abriste la página. Actualiza antes de guardar.",
+                )
+                return redirect(return_to)
+
             raw_quantity = request.POST.get(f"cantidad_{detail.pk}", "")
-            try:
-                submitted_quantity = Decimal(raw_quantity.strip().replace(",", "."))
-            except InvalidOperation:
-                submitted_quantity = None
-            if submitted_quantity == detail.cantidad:
-                continue
-            form = InventoryCountQuantityForm({"cantidad": raw_quantity})
+            raw_warehouse = request.POST.get(f"bodega_{detail.pk}", detail.bodega)
+            raw_location = request.POST.get(f"ubicacion_{detail.pk}", detail.ubicacion)
+            form = InventoryCountDetailForm(
+                {
+                    "cantidad": raw_quantity,
+                    "bodega": raw_warehouse,
+                    "ubicacion": raw_location,
+                },
+                original_bodega=detail.bodega,
+            )
             if not form.is_valid():
                 errors = " ".join(str(error) for field_errors in form.errors.values() for error in field_errors)
                 messages.error(request, f"No se guardaron los cambios. {detail.codigo} en {detail.ubicacion}: {errors}")
                 return redirect(return_to)
-            changes.append((detail, form.cleaned_data["cantidad"]))
+            new_values = (
+                form.cleaned_data["bodega"],
+                form.cleaned_data["ubicacion"],
+                form.cleaned_data["cantidad"],
+            )
+            if new_values != (detail.bodega, detail.ubicacion, detail.cantidad):
+                changes.append((detail, *new_values))
 
-        for detail, quantity in changes:
+        changed_locations = {
+            detail.pk
+            for detail, warehouse, location, quantity in changes
+            if (warehouse, location) != (detail.bodega, detail.ubicacion)
+        }
+        proposed_values = {
+            detail.pk: (warehouse, location)
+            for detail, warehouse, location, quantity in changes
+        }
+        selected_location_owners = {}
+        duplicate_changed_detail = None
+        for detail in details:
+            warehouse, location = proposed_values.get(
+                detail.pk, (detail.bodega, detail.ubicacion)
+            )
+            location_key = (
+                detail.codigo.casefold(),
+                warehouse.casefold(),
+                location.casefold(),
+            )
+            existing_owner = selected_location_owners.get(location_key)
+            if existing_owner is not None and (
+                detail.pk in changed_locations or existing_owner.pk in changed_locations
+            ):
+                duplicate_changed_detail = detail
+                break
+            selected_location_owners[location_key] = detail
+
+        if duplicate_changed_detail is not None:
+            warehouse, location = proposed_values.get(
+                duplicate_changed_detail.pk,
+                (duplicate_changed_detail.bodega, duplicate_changed_detail.ubicacion),
+            )
+            messages.error(
+                request,
+                f"No se guardaron los cambios. {duplicate_changed_detail.codigo} ya existe en {warehouse} / {location}.",
+            )
+            return redirect(return_to)
+
+        for detail, warehouse, location, quantity in changes:
+            if detail.pk not in changed_locations:
+                continue
+            if latest_load.detalles.filter(
+                codigo__iexact=detail.codigo,
+                bodega__iexact=warehouse,
+                ubicacion__iexact=location,
+            ).exclude(pk__in=ids).exists():
+                messages.error(
+                    request,
+                    f"No se guardaron los cambios. {detail.codigo} ya existe en {warehouse} / {location}.",
+                )
+                return redirect(return_to)
+
+        warehouse_changed = False
+        for detail, warehouse, location, quantity in changes:
             AjusteCantidadConteoInventario.objects.create(
                 detalle=detail,
                 cantidad_anterior=detail.cantidad,
                 cantidad_nueva=quantity,
+                bodega_anterior=detail.bodega,
+                bodega_nueva=warehouse,
+                ubicacion_anterior=detail.ubicacion,
+                ubicacion_nueva=location,
                 modificado_por=request.user,
             )
+            warehouse_changed = warehouse_changed or warehouse != detail.bodega
+            detail.bodega = warehouse
+            detail.ubicacion = location
             detail.cantidad = quantity
-            detail.save(update_fields=["cantidad"])
+            detail.save(update_fields=["bodega", "ubicacion", "cantidad"])
+
+        if warehouse_changed:
+            latest_load.total_bodegas = latest_load.detalles.values("bodega").distinct().count()
+            latest_load.save(update_fields=["total_bodegas"])
 
     if changes:
-        messages.success(request, f"Se guardaron {len(changes)} cantidad(es) del conteo vigente.")
+        messages.success(request, f"Se guardaron {len(changes)} registro(s) del conteo vigente.")
     else:
-        messages.info(request, "No había cantidades nuevas para guardar.")
+        messages.info(request, "No había cambios nuevos para guardar.")
     return redirect(return_to)
 
 

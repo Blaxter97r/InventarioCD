@@ -7,7 +7,7 @@
     <div><p class="eyebrow">Archivos maestros</p><h1>Conteo de inventario</h1><p>Consulta las cantidades contadas por bodega, ubicación y código.</p></div>
     <div class="inventory-page-actions">
       {% if current_load %}<a class="button inventory-page-download" href="{% url 'archivos:inventory_count_download' %}"><svg viewBox="0 0 24 24"><path d="M12 4v12m0 0 5-5m-5 5-5-5M5 20h14" /></svg>Descargar conteo vigente</a>{% endif %}
-      {% if can_edit_count and not edit_mode %}<a class="button inventory-page-edit" href="?carga={{ current_load.pk }}&editar=1#seleccionar-reconteo">Editar cantidades</a>{% endif %}
+      {% if can_edit_count and not edit_mode %}<a class="button inventory-page-edit" href="?carga={{ current_load.pk }}&editar=1#seleccionar-reconteo">Editar registros</a>{% endif %}
       {% if not is_editor %}
         {% if can_administer %}
           <a class="button button--primary" href="{% url 'archivos:inventory_count_upload' %}"><svg viewBox="0 0 24 24"><path d="M12 16V4m0 0L7 9m5-5 5 5M5 15v4h14v-4" /></svg>Cargar conteo</a>
@@ -97,8 +97,23 @@
         <tbody>
           {% for item in details %}
             <tr>
-              <td><strong class="warehouse-name">{{ item.bodega }}</strong></td>
-              <td><span class="location-code">{{ item.ubicacion }}</span></td>
+              <td>
+                {% if edit_mode %}
+                  <input type="hidden" name="original_bodega_{{ item.pk }}" value="{{ item.bodega }}">
+                  <select class="inventory-bulk-input inventory-bulk-input--warehouse" name="bodega_{{ item.pk }}" required aria-label="Bodega de {{ item.codigo }}">
+                    {% if item.bodega != "CENTRAL" and item.bodega != "RANSA" and item.bodega != "PEDREGAL" %}<option value="{{ item.bodega }}" selected>{{ item.bodega }}</option>{% endif %}
+                    <option value="CENTRAL" {% if item.bodega == "CENTRAL" %}selected{% endif %}>CENTRAL</option>
+                    <option value="RANSA" {% if item.bodega == "RANSA" %}selected{% endif %}>RANSA</option>
+                    <option value="PEDREGAL" {% if item.bodega == "PEDREGAL" %}selected{% endif %}>PEDREGAL</option>
+                  </select>
+                {% else %}<strong class="warehouse-name">{{ item.bodega }}</strong>{% endif %}
+              </td>
+              <td>
+                {% if edit_mode %}
+                  <input type="hidden" name="original_ubicacion_{{ item.pk }}" value="{{ item.ubicacion }}">
+                  <input class="inventory-bulk-input inventory-bulk-input--location" type="text" name="ubicacion_{{ item.pk }}" maxlength="100" value="{{ item.ubicacion }}" autocomplete="off" required aria-label="Ubicación de {{ item.codigo }}">
+                {% else %}<span class="location-code">{{ item.ubicacion }}</span>{% endif %}
+              </td>
               <td><strong class="code">{{ item.codigo }}</strong></td>
               <td>
                 {% if edit_mode %}
@@ -116,7 +131,7 @@
                   <span class="inventory-modified inventory-modified--empty">Sin modificaciones</span>
                 {% endif %}
               </td>
-              {% if edit_mode %}<td><button class="inventory-row-delete" type="submit" formaction="{% url 'archivos:inventory_count_detail_delete' item.pk %}" formnovalidate onclick="return confirm('¿Eliminar esta fila del conteo? Los cambios de cantidad sin guardar se perderán.');">Eliminar</button></td>{% endif %}
+              {% if edit_mode %}<td><button class="inventory-row-delete" type="submit" formaction="{% url 'archivos:inventory_count_detail_delete' item.pk %}" formnovalidate onclick="return confirm('¿Eliminar esta fila del conteo? Los cambios sin guardar se perderán.');">Eliminar</button></td>{% endif %}
             </tr>
           {% empty %}
             <tr><td class="empty" colspan="{% if edit_mode %}6{% else %}5{% endif %}">{% if edit_mode and not selected_recount %}Selecciona una línea de reconteo para comenzar.{% elif edit_mode %}Ninguno de los códigos seleccionados tiene registros en el conteo vigente con estos filtros.{% else %}No hay registros de conteo para mostrar.{% endif %}</td></tr>

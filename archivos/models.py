@@ -115,6 +115,10 @@ class AjusteCantidadConteoInventario(models.Model):
     )
     cantidad_anterior = models.DecimalField(max_digits=18, decimal_places=4)
     cantidad_nueva = models.DecimalField(max_digits=18, decimal_places=4)
+    bodega_anterior = models.CharField(max_length=100, null=True, blank=True)
+    bodega_nueva = models.CharField(max_length=100, null=True, blank=True)
+    ubicacion_anterior = models.CharField(max_length=100, null=True, blank=True)
+    ubicacion_nueva = models.CharField(max_length=100, null=True, blank=True)
     modificado_por = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.PROTECT,

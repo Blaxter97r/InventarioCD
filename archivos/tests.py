@@ -648,7 +648,7 @@ class InventoryCountQuantityEditTests(TestCase):
 
         page = self.client.get(reverse("archivos:inventory_count_index"))
         self.assertTrue(page.context["can_edit_count"])
-        self.assertContains(page, "Editar cantidades")
+        self.assertContains(page, "Editar registros")
 
         response = self.post_quantity("7")
         self.assertRedirects(response, reverse("archivos:inventory_count_index") + "?q=ABC-001")
@@ -703,7 +703,7 @@ class InventoryCountQuantityEditTests(TestCase):
         )
         page = self.client.get(reverse("archivos:inventory_count_index"), {"carga": self.load.pk})
         self.assertFalse(page.context["can_edit_count"])
-        self.assertNotContains(page, "Editar cantidades")
+        self.assertNotContains(page, "Editar registros")
         self.assertNotEqual(newer.pk, self.load.pk)
         response = self.post_quantity("9")
         self.assertEqual(response.status_code, 403)
@@ -868,6 +868,81 @@ class InventoryCountQuantityEditTests(TestCase):
         second.refresh_from_db()
         self.assertEqual(self.detail.cantidad, Decimal("5"))
         self.assertEqual(second.cantidad, Decimal("3"))
+        self.assertFalse(AjusteCantidadConteoInventario.objects.exists())
+
+    def test_general_edit_can_change_warehouse_and_location_with_audit(self):
+        index_url = reverse("archivos:inventory_count_index")
+        page = self.client.get(index_url, {
+            "editar": "1", "reconteo": self.recount.pk, "q": "ABC-001",
+        })
+        self.assertContains(page, f'name="bodega_{self.detail.pk}"')
+        self.assertContains(page, f'name="ubicacion_{self.detail.pk}"')
+
+        response = self.client.post(
+            reverse("archivos:inventory_count_bulk_quantity"),
+            {
+                "detalle_ids": [self.detail.pk],
+                f"original_{self.detail.pk}": "5.0000",
+                f"original_bodega_{self.detail.pk}": "Bodega Central",
+                f"original_ubicacion_{self.detail.pk}": "A-01",
+                f"cantidad_{self.detail.pk}": "5",
+                f"bodega_{self.detail.pk}": "RANSA",
+                f"ubicacion_{self.detail.pk}": "r-09",
+                "return_to": index_url,
+            },
+        )
+
+        self.assertRedirects(response, index_url)
+        self.detail.refresh_from_db()
+        self.load.refresh_from_db()
+        self.assertEqual(self.detail.bodega, "RANSA")
+        self.assertEqual(self.detail.ubicacion, "R-09")
+        self.assertEqual(self.detail.cantidad, Decimal("5"))
+        adjustment = AjusteCantidadConteoInventario.objects.get()
+        self.assertEqual(adjustment.bodega_anterior, "Bodega Central")
+        self.assertEqual(adjustment.bodega_nueva, "RANSA")
+        self.assertEqual(adjustment.ubicacion_anterior, "A-01")
+        self.assertEqual(adjustment.ubicacion_nueva, "R-09")
+        self.assertEqual(adjustment.modificado_por, self.supervisor)
+        self.assertEqual(self.load.total_bodegas, 1)
+
+    def test_general_edit_rejects_duplicate_or_stale_location(self):
+        duplicate = DetalleConteoInventario.objects.create(
+            carga=self.load,
+            bodega="RANSA",
+            ubicacion="R-09",
+            codigo="ABC-001",
+            cantidad=Decimal("2"),
+        )
+        url = reverse("archivos:inventory_count_bulk_quantity")
+        base_data = {
+            "detalle_ids": [self.detail.pk, duplicate.pk],
+            f"original_{self.detail.pk}": "5.0000",
+            f"original_bodega_{self.detail.pk}": "Bodega Central",
+            f"original_ubicacion_{self.detail.pk}": "A-01",
+            f"cantidad_{self.detail.pk}": "5",
+            f"bodega_{self.detail.pk}": "RANSA",
+            f"ubicacion_{self.detail.pk}": "r-09",
+            f"original_{duplicate.pk}": "2.0000",
+            f"original_bodega_{duplicate.pk}": "RANSA",
+            f"original_ubicacion_{duplicate.pk}": "R-09",
+            f"cantidad_{duplicate.pk}": "2",
+            f"bodega_{duplicate.pk}": "RANSA",
+            f"ubicacion_{duplicate.pk}": "R-09",
+        }
+
+        self.client.post(url, base_data)
+        self.detail.refresh_from_db()
+        self.assertEqual((self.detail.bodega, self.detail.ubicacion), ("Bodega Central", "A-01"))
+        self.assertFalse(AjusteCantidadConteoInventario.objects.exists())
+
+        stale_data = dict(base_data)
+        stale_data["detalle_ids"] = [self.detail.pk]
+        stale_data[f"original_ubicacion_{self.detail.pk}"] = "OTRA"
+        stale_data[f"ubicacion_{self.detail.pk}"] = "NUEVA-01"
+        self.client.post(url, stale_data)
+        self.detail.refresh_from_db()
+        self.assertEqual((self.detail.bodega, self.detail.ubicacion), ("Bodega Central", "A-01"))
         self.assertFalse(AjusteCantidadConteoInventario.objects.exists())
 
     def test_can_add_an_existing_code_in_each_allowed_warehouse(self):
@@ -1078,7 +1153,7 @@ class InventoryCountQuantityEditTests(TestCase):
         self.client.force_login(manager)
         page = self.client.get(reverse("archivos:inventory_count_index"))
         self.assertTrue(page.context["can_edit_count"])
-        self.assertContains(page, "Editar cantidades")
+        self.assertContains(page, "Editar registros")
         self.assertEqual(self.post_quantity("9").status_code, 302)
         self.detail.refresh_from_db()
         self.assertEqual(self.detail.cantidad, Decimal("9"))

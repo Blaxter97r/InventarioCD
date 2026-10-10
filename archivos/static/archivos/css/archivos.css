@@ -187,6 +187,8 @@ td { padding: 16px 19px; border-top: 1px solid #edf1f2; color: #536269; font-siz
 .inventory-location-form input:focus, .inventory-location-form select:focus { outline: 2px solid #a9d9d2; border-color: var(--teal); }
 .inventory-location-form .inventory-save-button { height: 38px; }
 .inventory-bulk-input { width: 112px; max-width: 100%; height: 35px; padding: 0 9px; border: 1px solid #b9d1ce; border-radius: 7px; color: var(--navy); background: #fff; font: inherit; font-size: 12px; font-weight: 800; text-align: right; }
+.inventory-bulk-input--warehouse { width: 126px; text-align: left; }
+.inventory-bulk-input--location { width: 145px; text-align: left; text-transform: uppercase; }
 .inventory-bulk-input:focus { outline: 2px solid #a9d9d2; border-color: var(--teal); }
 .inventory-bulk-input.is-changed { border-color: #d49a36; background: #fff9ed; box-shadow: 0 0 0 2px rgba(212, 154, 54, .12); }
 .inventory-modified { display: grid; gap: 2px; min-width: 116px; }

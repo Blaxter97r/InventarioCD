@@ -47,6 +47,28 @@ class InventoryCountQuantityForm(forms.Form):
     )
 
 
+class InventoryCountDetailForm(InventoryCountQuantityForm):
+    bodega = forms.ChoiceField(
+        label="Bodega",
+        choices=(
+            ("CENTRAL", "CENTRAL"),
+            ("RANSA", "RANSA"),
+            ("PEDREGAL", "PEDREGAL"),
+        ),
+    )
+    ubicacion = forms.CharField(label="Ubicación", max_length=100, strip=True)
+
+    def __init__(self, *args, original_bodega="", **kwargs):
+        super().__init__(*args, **kwargs)
+        choices = list(self.fields["bodega"].choices)
+        if original_bodega and original_bodega not in dict(choices):
+            choices.insert(0, (original_bodega, original_bodega))
+        self.fields["bodega"].choices = choices
+
+    def clean_ubicacion(self):
+        return self.cleaned_data["ubicacion"].upper()
+
+
 class InventoryCountLocationForm(forms.Form):
     WAREHOUSE_CHOICES = (
         ("CENTRAL", "CENTRAL"),
