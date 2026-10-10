@@ -6,6 +6,7 @@
   <div class="page-heading">
     <div><p class="eyebrow">Archivos maestros</p><h1>Conteo de inventario</h1><p>Consulta las cantidades contadas por bodega, ubicación y código.</p></div>
     <div class="inventory-page-actions">
+      {% if current_load %}<a class="button inventory-page-download" href="{% url 'archivos:inventory_count_download' %}"><svg viewBox="0 0 24 24"><path d="M12 4v12m0 0 5-5m-5 5-5-5M5 20h14" /></svg>Descargar conteo vigente</a>{% endif %}
       {% if can_edit_count and not edit_mode %}<a class="button inventory-page-edit" href="?carga={{ current_load.pk }}&editar=1#seleccionar-reconteo">Editar cantidades</a>{% endif %}
       {% if not is_editor %}
         {% if can_administer %}

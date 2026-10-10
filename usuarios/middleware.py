@@ -6,6 +6,7 @@ EDITOR_ALLOWED_VIEWS = {
     "usuarios:logout",
     "usuarios:password_reset",
     "archivos:inventory_count_index",
+    "archivos:inventory_count_download",
     "archivos:inventory_count_quantity",
     "archivos:inventory_count_bulk_quantity",
     "archivos:inventory_count_location",

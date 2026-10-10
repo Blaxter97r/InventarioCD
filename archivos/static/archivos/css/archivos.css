@@ -150,6 +150,8 @@ td { padding: 16px 19px; border-top: 1px solid #edf1f2; color: #536269; font-siz
 .inventory-load-actions button { color: #a33d35; background: #fff0ef; }
 .inventory-quantity { display: inline-flex; min-width: 62px; justify-content: flex-end; padding: 5px 9px; border-radius: 7px; color: #17695d; background: #e2f4f1; font-weight: 800; }
 .inventory-page-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 10px; }
+.inventory-page-download { border: 1px solid #bedbd6; color: var(--teal); background: #fff; }
+.inventory-page-download:hover { border-color: var(--teal); background: var(--teal-soft); }
 .inventory-page-edit { border: 1px solid #bedbd6; color: var(--teal); background: #fff; }
 .inventory-page-edit:hover { background: var(--teal-soft); }
 .inventory-recount-selector { margin-bottom: 18px; padding: 20px; border: 1px solid #d8e5e3; border-radius: 14px; background: #f8fbfa; scroll-margin-top: 18px; }

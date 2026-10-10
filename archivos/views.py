@@ -408,6 +408,48 @@ def inventory_count_index_view(request):
 
 
 @login_required
+def inventory_count_download_view(request):
+    current_load = CargaConteoInventario.objects.first()
+    if current_load is None:
+        raise Http404("No hay un conteo vigente para descargar.")
+
+    workbook = Workbook()
+    sheet = workbook.active
+    sheet.title = "Conteo"
+    sheet.append(("Bodega", "Ubicacion", "Codigo", "Cantidad"))
+    sheet.freeze_panes = "A2"
+    for cell in sheet[1]:
+        cell.font = Font(bold=True, color="FFFFFF")
+        cell.fill = PatternFill("solid", fgColor="087F76")
+        cell.alignment = Alignment(horizontal="center")
+
+    details = current_load.detalles.order_by(
+        "bodega", "ubicacion", "codigo", "pk"
+    ).values_list("bodega", "ubicacion", "codigo", "cantidad")
+    for bodega, ubicacion, codigo, cantidad in details.iterator(chunk_size=2000):
+        sheet.append((bodega, ubicacion, codigo, cantidad))
+        for cell in sheet[sheet.max_row][:3]:
+            cell.data_type = "s"
+        sheet.cell(row=sheet.max_row, column=4).number_format = "0.####"
+
+    sheet.auto_filter.ref = f"A1:D{sheet.max_row}"
+    for column, width in zip(("A", "B", "C", "D"), (24, 24, 24, 16)):
+        sheet.column_dimensions[column].width = width
+
+    output = BytesIO()
+    workbook.save(output)
+    workbook.close()
+    response = HttpResponse(
+        output.getvalue(),
+        content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    )
+    response["Content-Disposition"] = (
+        'attachment; filename="conteo_inventario_vigente.xlsx"'
+    )
+    return response
+
+
+@login_required
 def inventory_count_location_view(request):
     if request.method != "POST":
         raise Http404

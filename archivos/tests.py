@@ -524,6 +524,69 @@ class InventoryCountImportTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertIn("spreadsheetml", response["Content-Type"])
 
+    def test_authenticated_user_can_download_current_inventory_count_as_excel(self):
+        old_load = CargaConteoInventario.objects.create(
+            archivo_nombre="anterior.xlsx", cargado_por=self.admin
+        )
+        DetalleConteoInventario.objects.create(
+            carga=old_load,
+            bodega="ANTERIOR",
+            ubicacion="OLD-01",
+            codigo="OLD-001",
+            cantidad=Decimal("99"),
+        )
+        current_load = CargaConteoInventario.objects.create(
+            archivo_nombre="vigente.xlsx",
+            total_registros=2,
+            total_codigos=2,
+            total_bodegas=1,
+            cargado_por=self.admin,
+        )
+        DetalleConteoInventario.objects.create(
+            carga=current_load,
+            bodega="CENTRAL",
+            ubicacion="A-01",
+            codigo="ABC-001",
+            cantidad=Decimal("5"),
+        )
+        DetalleConteoInventario.objects.create(
+            carga=current_load,
+            bodega="CENTRAL",
+            ubicacion="A-02",
+            codigo="=ABC-002",
+            cantidad=Decimal("2.5"),
+        )
+
+        index = self.client.get(reverse("archivos:inventory_count_index"))
+        download_url = reverse("archivos:inventory_count_download")
+        self.assertContains(index, f'href="{download_url}"')
+        self.assertContains(index, "Descargar conteo vigente")
+
+        response = self.client.get(download_url, {"q": "ABC-001", "carga": old_load.pk})
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("spreadsheetml", response["Content-Type"])
+        self.assertEqual(
+            response["Content-Disposition"],
+            'attachment; filename="conteo_inventario_vigente.xlsx"',
+        )
+        downloaded = load_workbook(BytesIO(response.content), data_only=False)
+        sheet = downloaded["Conteo"]
+        self.assertEqual(
+            list(sheet.values),
+            [
+                ("Bodega", "Ubicacion", "Codigo", "Cantidad"),
+                ("CENTRAL", "A-01", "ABC-001", 5),
+                ("CENTRAL", "A-02", "=ABC-002", 2.5),
+            ],
+        )
+        self.assertEqual(sheet["C3"].data_type, "s")
+        downloaded.close()
+
+    def test_inventory_count_download_requires_a_current_load(self):
+        response = self.client.get(reverse("archivos:inventory_count_download"))
+        self.assertEqual(response.status_code, 404)
+
 
 class InventoryCountQuantityEditTests(TestCase):
     def setUp(self):
@@ -1048,6 +1111,11 @@ class InventoryCountQuantityEditTests(TestCase):
         self.assertNotContains(page, "Conteo seleccionado")
         self.assertNotContains(page, "inventory-load-info")
         self.assertContains(page, 'action="' + index_url + '#conteo-vigente"')
+        self.assertContains(page, "Descargar conteo vigente")
+        self.assertEqual(
+            self.client.get(reverse("archivos:inventory_count_download")).status_code,
+            200,
+        )
         self.assertContains(
             page,
             'value="' + index_url + f'?editar=1&amp;reconteo={self.recount.pk}#conteo-vigente"',
