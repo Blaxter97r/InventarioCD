@@ -756,6 +756,64 @@ class InventoryCountQuantityEditTests(TestCase):
         self.assertEqual(other.cantidad, Decimal("4"))
         self.assertEqual(AjusteCantidadConteoInventario.objects.count(), 2)
 
+    def test_edit_all_mode_can_find_and_change_code_not_selected_for_recount(self):
+        other = DetalleConteoInventario.objects.create(
+            carga=self.load,
+            bodega="CENTRAL",
+            ubicacion="B-01",
+            codigo="XYZ-999",
+            cantidad=Decimal("4"),
+        )
+        index_url = reverse("archivos:inventory_count_index")
+
+        page = self.client.get(index_url, {
+            "editar": "1",
+            "todos": "1",
+            "q": "XYZ-999",
+        })
+
+        self.assertTrue(page.context["edit_mode"])
+        self.assertTrue(page.context["edit_all"])
+        self.assertIsNone(page.context["selected_recount"])
+        self.assertEqual(page.context["details"].paginator.count, 1)
+        self.assertEqual(page.context["details"].object_list[0].pk, other.pk)
+        self.assertContains(page, 'name="todos" value="1"')
+        self.assertContains(page, "Todos los códigos")
+        self.assertContains(page, f'name="ubicacion_{other.pk}"')
+        self.assertNotContains(page, f'name="ubicacion_{self.detail.pk}"')
+
+        response = self.client.post(
+            reverse("archivos:inventory_count_bulk_quantity"),
+            {
+                "detalle_ids": [other.pk],
+                f"original_{other.pk}": "4.0000",
+                f"original_bodega_{other.pk}": "CENTRAL",
+                f"original_ubicacion_{other.pk}": "B-01",
+                f"cantidad_{other.pk}": "6",
+                f"bodega_{other.pk}": "PEDREGAL",
+                f"ubicacion_{other.pk}": "p-20",
+                "return_to": index_url + "?editar=1&todos=1&q=XYZ-999",
+            },
+        )
+
+        self.assertRedirects(
+            response, index_url + "?editar=1&todos=1&q=XYZ-999"
+        )
+        other.refresh_from_db()
+        self.assertEqual(other.bodega, "PEDREGAL")
+        self.assertEqual(other.ubicacion, "P-20")
+        self.assertEqual(other.cantidad, Decimal("6"))
+        self.assertTrue(
+            AjusteCantidadConteoInventario.objects.filter(
+                detalle=other,
+                bodega_anterior="CENTRAL",
+                bodega_nueva="PEDREGAL",
+                ubicacion_anterior="B-01",
+                ubicacion_nueva="P-20",
+                modificado_por=self.supervisor,
+            ).exists()
+        )
+
     def test_edit_flow_lists_recount_lines_and_orders_only_selected_codes_like_pdf(self):
         early = DetalleConteoInventario.objects.create(
             carga=self.load,
@@ -833,7 +891,8 @@ class InventoryCountQuantityEditTests(TestCase):
             [item.linea.nlinea for item in chooser.context["recount_choices"]],
             ["2", "10"],
         )
-        self.assertContains(chooser, "Selecciona la línea del reconteo")
+        self.assertContains(chooser, "Elige qué registros editar")
+        self.assertContains(chooser, "Todos los códigos")
         self.assertContains(chooser, "Segunda línea")
 
         page = self.client.get(

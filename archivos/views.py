@@ -285,6 +285,7 @@ def inventory_count_index_view(request):
         and current_load.pk == latest_load.pk
     )
     edit_mode = can_edit_count and request.GET.get("editar") == "1"
+    edit_all = edit_mode and request.GET.get("todos") == "1"
 
     if edit_mode:
         from conteo.models import CargaDiferencias
@@ -324,6 +325,7 @@ def inventory_count_index_view(request):
             )
             if selected_recount is None:
                 raise Http404("El reconteo seleccionado no está disponible para edición.")
+            edit_all = False
             selected_differences = list(
                 selected_recount.diferencias.filter(seleccionada=True)
                 .order_by("sublinea", "codigo", "pk")
@@ -362,7 +364,7 @@ def inventory_count_index_view(request):
                     .annotate(recount_order=recount_order)
                     .order_by("recount_order", "bodega", "ubicacion", "pk")
                 )
-            else:
+            elif not edit_all:
                 details = details.none()
         warehouses = details.order_by("bodega").values_list("bodega", flat=True).distinct()
         if query:
@@ -398,6 +400,7 @@ def inventory_count_index_view(request):
             "current_load": current_load,
             "can_edit_count": can_edit_count,
             "edit_mode": edit_mode,
+            "edit_all": edit_all,
             "recount_choices": recount_choices,
             "selected_recount": selected_recount,
             "recount_codes_count": len(recount_codes),

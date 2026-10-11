@@ -31,10 +31,15 @@
   {% if edit_mode %}
     <section class="inventory-recount-selector" id="seleccionar-reconteo">
       <div class="section-heading">
-        <div><span class="section-icon inventory-icon">1</span><div><h2>Selecciona la línea del reconteo</h2><p>Solo se mostrarán los códigos elegidos por Gerencia, en el orden utilizado para el PDF.</p></div></div>
+        <div><span class="section-icon inventory-icon">1</span><div><h2>Elige qué registros editar</h2><p>Edita cualquier código del conteo vigente o limita el trabajo a una línea de reconteo.</p></div></div>
         <a class="inventory-edit-button" href="?carga={{ current_load.pk }}#conteo-vigente">Cerrar edición</a>
       </div>
       <div class="inventory-recount-grid">
+        <a class="inventory-recount-option {% if edit_all %}is-selected{% endif %}" href="?carga={{ current_load.pk }}&editar=1&todos=1#conteo-vigente">
+          <span class="inventory-recount-line">T</span>
+          <span><strong>Todos los códigos</strong><small>Busca y corrige cualquier registro del conteo vigente</small></span>
+          <b>{% if edit_all %}Seleccionada{% else %}Editar →{% endif %}</b>
+        </a>
         {% for recount in recount_choices %}
           <a class="inventory-recount-option {% if selected_recount.pk == recount.pk %}is-selected{% endif %}" href="?carga={{ current_load.pk }}&editar=1&reconteo={{ recount.pk }}#conteo-vigente">
             <span class="inventory-recount-line">{{ recount.linea.nlinea }}</span>
@@ -48,22 +53,23 @@
     </section>
   {% endif %}
 
-  {% if not edit_mode or selected_recount %}
+  {% if not edit_mode or selected_recount or edit_all %}
   <form class="data-toolbar" method="get" action="{% url 'archivos:inventory_count_index' %}#conteo-vigente">
     {% if current_load %}<input type="hidden" name="carga" value="{{ current_load.pk }}" />{% endif %}
     {% if edit_mode %}<input type="hidden" name="editar" value="1" />{% endif %}
+    {% if edit_all %}<input type="hidden" name="todos" value="1" />{% endif %}
     {% if selected_recount %}<input type="hidden" name="reconteo" value="{{ selected_recount.pk }}" />{% endif %}
     <label class="toolbar-field toolbar-field--search"><span>Buscar código o ubicación</span><span class="toolbar-control"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7" /><path d="m16 16 4 4" /></svg><input name="q" value="{{ query }}" placeholder="Escribe un código para encontrarlo" {% if edit_mode and query %}autofocus{% endif %} /></span></label>
     <label class="toolbar-field toolbar-field--select"><span>Bodega</span><select name="bodega"><option value="">Todas</option>{% for warehouse in warehouses %}<option value="{{ warehouse }}" {% if selected_warehouse == warehouse %}selected{% endif %}>{{ warehouse }}</option>{% endfor %}</select></label>
     <button class="toolbar-submit" type="submit">Aplicar</button>
-    {% if query or selected_warehouse %}<a class="toolbar-clear" href="{% url 'archivos:inventory_count_index' %}{% if current_load %}?carga={{ current_load.pk }}{% if edit_mode %}&editar=1{% if selected_recount %}&reconteo={{ selected_recount.pk }}{% endif %}{% endif %}{% endif %}#conteo-vigente">Limpiar</a>{% endif %}
+    {% if query or selected_warehouse %}<a class="toolbar-clear" href="{% url 'archivos:inventory_count_index' %}{% if current_load %}?carga={{ current_load.pk }}{% if edit_mode %}&editar=1{% if edit_all %}&todos=1{% elif selected_recount %}&reconteo={{ selected_recount.pk }}{% endif %}{% endif %}{% endif %}#conteo-vigente">Limpiar</a>{% endif %}
   </form>
   {% endif %}
 
-  {% if not edit_mode or selected_recount %}
+  {% if not edit_mode or selected_recount or edit_all %}
   <section class="data-section" id="conteo-vigente">
     <div class="section-heading inventory-edit-heading">
-      <div><span class="section-icon inventory-icon">{% if edit_mode %}2{% else %}C{% endif %}</span><div><h2>{% if edit_mode and selected_recount %}Línea {{ selected_recount.linea.nlinea }} · {{ selected_recount.linea.descripcion }}{% elif edit_mode %}Códigos por editar{% elif can_edit_count %}Conteo vigente{% else %}Registros de conteo{% endif %}</h2><p>{% if edit_mode and selected_recount %}{{ recount_codes_count }} códigos seleccionados por Gerencia, ordenados como el PDF de reconteo{% elif edit_mode %}Selecciona primero una línea para cargar sus códigos{% else %}Cantidades por bodega, ubicación y código{% endif %}</p></div></div>
+      <div><span class="section-icon inventory-icon">{% if edit_mode %}2{% else %}C{% endif %}</span><div><h2>{% if edit_all %}Todos los códigos{% elif edit_mode and selected_recount %}Línea {{ selected_recount.linea.nlinea }} · {{ selected_recount.linea.descripcion }}{% elif edit_mode %}Códigos por editar{% elif can_edit_count %}Conteo vigente{% else %}Registros de conteo{% endif %}</h2><p>{% if edit_all %}Busca cualquier código y corrige su bodega, ubicación o cantidad{% elif edit_mode and selected_recount %}{{ recount_codes_count }} códigos seleccionados por Gerencia, ordenados como el PDF de reconteo{% elif edit_mode %}Selecciona primero una opción para cargar sus códigos{% else %}Cantidades por bodega, ubicación y código{% endif %}</p></div></div>
       <div class="inventory-edit-actions">
         <span class="record-count">{{ details.paginator.count }} registros encontrados</span>
         {% if can_edit_count %}
@@ -134,17 +140,17 @@
               {% if edit_mode %}<td><button class="inventory-row-delete" type="submit" formaction="{% url 'archivos:inventory_count_detail_delete' item.pk %}" formnovalidate onclick="return confirm('¿Eliminar esta fila del conteo? Los cambios sin guardar se perderán.');">Eliminar</button></td>{% endif %}
             </tr>
           {% empty %}
-            <tr><td class="empty" colspan="{% if edit_mode %}6{% else %}5{% endif %}">{% if edit_mode and not selected_recount %}Selecciona una línea de reconteo para comenzar.{% elif edit_mode %}Ninguno de los códigos seleccionados tiene registros en el conteo vigente con estos filtros.{% else %}No hay registros de conteo para mostrar.{% endif %}</td></tr>
+            <tr><td class="empty" colspan="{% if edit_mode %}6{% else %}5{% endif %}">{% if edit_mode and not selected_recount and not edit_all %}Selecciona todos los códigos o una línea de reconteo para comenzar.{% elif edit_mode %}No hay registros del conteo vigente con estos filtros.{% else %}No hay registros de conteo para mostrar.{% endif %}</td></tr>
           {% endfor %}
         </tbody>
       </table></div>
-      {% if details.paginator.num_pages > 1 %}<nav class="pagination"><a {% if details.has_previous %}href="?carga={{ current_load.pk }}&q={{ query|urlencode }}&bodega={{ selected_warehouse|urlencode }}&page={{ details.previous_page_number }}{% if edit_mode %}&editar=1&reconteo={{ selected_recount.pk }}{% endif %}#conteo-vigente"{% endif %}>{% if details.has_previous %}← Anterior{% endif %}</a><span>Página {{ details.number }} de {{ details.paginator.num_pages }}</span><a {% if details.has_next %}href="?carga={{ current_load.pk }}&q={{ query|urlencode }}&bodega={{ selected_warehouse|urlencode }}&page={{ details.next_page_number }}{% if edit_mode %}&editar=1&reconteo={{ selected_recount.pk }}{% endif %}#conteo-vigente"{% endif %}>{% if details.has_next %}Siguiente →{% endif %}</a></nav>{% endif %}
+      {% if details.paginator.num_pages > 1 %}<nav class="pagination"><a {% if details.has_previous %}href="?carga={{ current_load.pk }}&q={{ query|urlencode }}&bodega={{ selected_warehouse|urlencode }}&page={{ details.previous_page_number }}{% if edit_mode %}&editar=1{% if edit_all %}&todos=1{% else %}&reconteo={{ selected_recount.pk }}{% endif %}{% endif %}#conteo-vigente"{% endif %}>{% if details.has_previous %}← Anterior{% endif %}</a><span>Página {{ details.number }} de {{ details.paginator.num_pages }}</span><a {% if details.has_next %}href="?carga={{ current_load.pk }}&q={{ query|urlencode }}&bodega={{ selected_warehouse|urlencode }}&page={{ details.next_page_number }}{% if edit_mode %}&editar=1{% if edit_all %}&todos=1{% else %}&reconteo={{ selected_recount.pk }}{% endif %}{% endif %}#conteo-vigente"{% endif %}>{% if details.has_next %}Siguiente →{% endif %}</a></nav>{% endif %}
       </div>
     {% if edit_mode %}<div class="inventory-bulk-footer"><span>Guarda antes de buscar otro código para conservar los cambios.</span><button class="inventory-save-button" type="submit" {% if not details %}disabled{% endif %}>Guardar cambios</button></div></form>{% endif %}
   </section>
   {% endif %}
 
-  {% if edit_mode and selected_recount %}
+  {% if selected_recount or edit_all %}
     <script>
       (() => {
         const form = document.getElementById('inventory-bulk-edit');
